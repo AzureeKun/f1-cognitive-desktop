@@ -1,0 +1,16 @@
+# Firebase credentials (NEVER commit this)
+firebase-credentials.json
+f1-cognitive-telemetry-firebase-adminsdk-*.json
+
+# Environment variables
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+
+# SQLite (if any leftover)
+*.db
