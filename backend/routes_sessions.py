@@ -92,7 +92,7 @@ def get_sessions():
         return jsonify({'error': 'steamId query param is required'}), 400
 
     sessions_ref = db.collection('sessions')
-    query = sessions_ref.where(filter=FieldFilter('userId', '==', steam_id)).order_by('startTime', direction='DESCENDING')
+    query = sessions_ref.where(filter=FieldFilter('userId', '==', steam_id))
     docs = query.stream()
 
     sessions = []
@@ -105,6 +105,9 @@ def get_sessions():
         if session.get('endTime'):
             session['endTime'] = session['endTime'].isoformat() if hasattr(session['endTime'], 'isoformat') else str(session['endTime'])
         sessions.append(session)
+
+    # Sort by startTime descending (done in Python to avoid needing composite index)
+    sessions.sort(key=lambda s: s.get('startTime', ''), reverse=True)
 
     return jsonify({'sessions': sessions, 'total': len(sessions)})
 

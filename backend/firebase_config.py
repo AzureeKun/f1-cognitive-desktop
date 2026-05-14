@@ -51,10 +51,19 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 
 # Path to your Firebase service account key JSON file
+# Try the standard name first, then look for any firebase admin SDK file
 CREDENTIALS_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     'firebase-credentials.json'
 )
+
+# Also check for the auto-generated filename from Firebase Console
+if not os.path.exists(CREDENTIALS_PATH):
+    import glob
+    pattern = os.path.join(os.path.dirname(os.path.abspath(__file__)), '*firebase-adminsdk*.json')
+    matches = glob.glob(pattern)
+    if matches:
+        CREDENTIALS_PATH = matches[0]
 
 
 def initialize_firebase():

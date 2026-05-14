@@ -1,0 +1,13 @@
+{
+  "name": "f1-focus-overlay",
+  "version": "1.0.0",
+  "description": "Always-on-top overlay for F1 Cognitive Focus Telemetry",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron ."
+  },
+  "dependencies": {
+    "electron": "^33.2.0"
+  }
+}
