@@ -194,7 +194,7 @@ def ai_status():
     """Check if AI model is loaded and ready."""
     return jsonify({
         'modelLoaded': ai_ready,
-        'modelFile': 'model_kognitif_ann.h5',
+        'modelFile': 'model_kognitif_gwo_pso_ann.h5',
         'scalerFile': 'scaler_telemetri.pkl',
     })
 
