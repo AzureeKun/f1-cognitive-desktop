@@ -62,6 +62,22 @@ export function AppProvider({ children }) {
     document.documentElement.style.setProperty('--color-bg', theme.bg)
     document.documentElement.style.setProperty('--color-card', theme.card)
     document.documentElement.style.setProperty('--color-border', theme.border)
+
+    // Sync to backend for overlay
+    fetch(`${API_URL}/api/theme`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: theme.id,
+        name: theme.name,
+        primary: theme.primary,
+        secondary: theme.secondary,
+        accent: theme.accent,
+        bg: theme.bg,
+        card: theme.card,
+        border: theme.border,
+      }),
+    }).catch(() => {})
   }, [themeId, theme])
 
   /**
@@ -76,7 +92,7 @@ export function AppProvider({ children }) {
    */
   const loginWithSteamMock = () => {
     setUser({
-      steamId: '76561198012345678',
+      steamId: '76561198884240051',
       displayName: 'RacerPro44',
       avatar: 'https://avatars.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb_medium.jpg',
       profileUrl: 'https://steamcommunity.com/id/racerpro44',
@@ -91,6 +107,22 @@ export function AppProvider({ children }) {
 
   const changeTheme = (newThemeId) => {
     setThemeId(newThemeId)
+    // Sync theme to backend (for Electron overlay)
+    const newTheme = getTeamTheme(newThemeId)
+    fetch(`${API_URL}/api/theme`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: newTheme.id,
+        name: newTheme.name,
+        primary: newTheme.primary,
+        secondary: newTheme.secondary,
+        accent: newTheme.accent,
+        bg: newTheme.bg,
+        card: newTheme.card,
+        border: newTheme.border,
+      }),
+    }).catch(() => {})
   }
 
   return (

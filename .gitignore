@@ -1,0 +1,25 @@
+# Node
+node_modules/
+frontend/dist/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+
+# Environment & secrets
+.env
+*.pem
+serviceAccountKey.json
+firebase-credentials.json
+f1-cognitive-telemetry-firebase-adminsdk-*.json
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

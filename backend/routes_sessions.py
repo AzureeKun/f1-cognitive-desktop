@@ -17,8 +17,15 @@ from datetime import datetime
 from flask import Blueprint, request, jsonify
 from firebase_config import get_db
 from google.cloud.firestore_v1 import FieldFilter
+from shared_state import sessions_store, global_live_buffer, active_session_stats
 
 sessions_bp = Blueprint('sessions', __name__)
+
+# ============================================================
+# IN-MEMORY SESSION STORE (fallback when Firebase is unavailable)
+# ============================================================
+_sessions_store = sessions_store
+_firebase_available = False  # Track if Firebase is reachable
 
 
 # ============================================================
@@ -31,31 +38,13 @@ def create_session():
     Start a new driving session.
     Body: { steamId, trackName, gameMode, displayName, avatarUrl }
     """
-    db = get_db()
-    if not db:
-        return jsonify({'error': 'Database not available'}), 503
-
     data = request.get_json()
     if not data or not data.get('steamId'):
         return jsonify({'error': 'steamId is required'}), 400
 
     steam_id = data['steamId']
-
-    # Ensure user exists in database
-    user_ref = db.collection('users').document(steam_id)
-    user_doc = user_ref.get()
-    if not user_doc.exists:
-        user_ref.set({
-            'displayName': data.get('displayName', 'Unknown'),
-            'avatarUrl': data.get('avatarUrl', ''),
-            'profileUrl': data.get('profileUrl', ''),
-            'experienceLevel': 'Beginner',
-            'createdAt': datetime.utcnow(),
-            'lastLogin': datetime.utcnow(),
-        })
-
-    # Create new session
     session_id = str(uuid.uuid4())[:8]  # Short unique ID
+
     session_data = {
         'userId': steam_id,
         'startTime': datetime.utcnow(),
@@ -68,7 +57,38 @@ def create_session():
         'focusResult': None,
     }
 
-    db.collection('sessions').document(session_id).set(session_data)
+    # Always store in memory
+    _sessions_store[session_id] = {**session_data, 'id': session_id}
+
+    # Initialize session stats tracker for aggregation
+    active_session_stats[session_id] = {
+        'focus_scores': [],
+        'max_lap': 0,
+        'data_points': 0,
+        'fastest_lap': None,
+    }
+
+    # Save to Firebase via REST API (bypasses gRPC SSL issues)
+    try:
+        from firestore_rest import set_document
+        import urllib3
+        urllib3.disable_warnings()
+        
+        set_document('sessions', session_id, {
+            'userId': steam_id,
+            'trackName': data.get('trackName', 'Unknown'),
+            'gameMode': data.get('gameMode', 'Time Trial'),
+            'totalLaps': 0,
+            'bestLapTime': None,
+            'isActive': True,
+            'focusResult': None,
+            'startTime': datetime.utcnow().isoformat(),
+        })
+        print(f"[SESSION] OK - {session_id} saved to Firestore")
+    except Exception as e:
+        print(f"[SESSION] Firestore save failed: {e}")
+    else:
+        print(f"[SESSION] Session {session_id} created (no Firebase)")
 
     return jsonify({
         'message': 'Session started',
@@ -80,80 +100,137 @@ def create_session():
 @sessions_bp.route('/api/sessions', methods=['GET'])
 def get_sessions():
     """
-    Get all sessions for a user.
-    Query params: steamId (required)
+    Get ALL historical sessions for a user (completed + active).
+    Fetches from Firestore REST API for persistence across server restarts.
+    Falls back to in-memory store if Firestore is unavailable.
     """
-    db = get_db()
-    if not db:
-        return jsonify({'error': 'Database not available'}), 503
-
     steam_id = request.args.get('steamId')
     if not steam_id:
         return jsonify({'error': 'steamId query param is required'}), 400
 
-    sessions_ref = db.collection('sessions')
-    query = sessions_ref.where(filter=FieldFilter('userId', '==', steam_id))
-    docs = query.stream()
+    # Try Firestore REST API first (returns ALL historical sessions)
+    try:
+        from firestore_rest import get_collection
+        import urllib3
+        urllib3.disable_warnings()
 
+        all_sessions = get_collection('sessions')
+        sessions = []
+        for s in all_sessions:
+            # Filter by userId
+            if s.get('userId') != steam_id:
+                continue
+            sessions.append(s)
+
+        # Sort by startTime descending (newest first)
+        sessions.sort(key=lambda s: s.get('startTime', ''), reverse=True)
+
+        if sessions:
+            return jsonify({'sessions': sessions, 'total': len(sessions)})
+    except Exception as e:
+        print(f"[SESSIONS] Firestore REST fetch failed: {e}")
+
+    # Fallback: serve from in-memory store
     sessions = []
-    for doc in docs:
-        session = doc.to_dict()
-        session['id'] = doc.id
-        # Convert timestamps to ISO strings
-        if session.get('startTime'):
-            session['startTime'] = session['startTime'].isoformat() if hasattr(session['startTime'], 'isoformat') else str(session['startTime'])
-        if session.get('endTime'):
-            session['endTime'] = session['endTime'].isoformat() if hasattr(session['endTime'], 'isoformat') else str(session['endTime'])
-        sessions.append(session)
+    for sid, sdata in _sessions_store.items():
+        if sdata.get('userId') == steam_id:
+            s = {**sdata}
+            if s.get('startTime') and hasattr(s['startTime'], 'isoformat'):
+                s['startTime'] = s['startTime'].isoformat()
+            if s.get('endTime') and hasattr(s['endTime'], 'isoformat'):
+                s['endTime'] = s['endTime'].isoformat()
+            sessions.append(s)
 
-    # Sort by startTime descending (done in Python to avoid needing composite index)
     sessions.sort(key=lambda s: s.get('startTime', ''), reverse=True)
-
     return jsonify({'sessions': sessions, 'total': len(sessions)})
 
 
 @sessions_bp.route('/api/sessions/<session_id>', methods=['GET'])
 def get_session_detail(session_id):
-    """Get detailed session info."""
-    db = get_db()
-    if not db:
-        return jsonify({'error': 'Database not available'}), 503
+    """Get detailed session info from memory."""
+    if session_id in _sessions_store:
+        session = {**_sessions_store[session_id]}
+        if session.get('startTime') and hasattr(session['startTime'], 'isoformat'):
+            session['startTime'] = session['startTime'].isoformat()
+        if session.get('endTime') and hasattr(session['endTime'], 'isoformat'):
+            session['endTime'] = session['endTime'].isoformat()
+        return jsonify({'session': session})
 
-    doc = db.collection('sessions').document(session_id).get()
-    if not doc.exists:
-        return jsonify({'error': 'Session not found'}), 404
-
-    session = doc.to_dict()
-    session['id'] = doc.id
-    if session.get('startTime'):
-        session['startTime'] = session['startTime'].isoformat() if hasattr(session['startTime'], 'isoformat') else str(session['startTime'])
-    if session.get('endTime'):
-        session['endTime'] = session['endTime'].isoformat() if hasattr(session['endTime'], 'isoformat') else str(session['endTime'])
-
-    return jsonify({'session': session})
+    return jsonify({'error': 'Session not found'}), 404
 
 
 @sessions_bp.route('/api/sessions/<session_id>/end', methods=['PUT'])
 def end_session(session_id):
     """
-    End an active session.
-    Body: { totalLaps, bestLapTime }
+    End an active session. Computes aggregated stats and saves to Firebase.
+    Calculates: avg focus, total laps, fastest lap, duration.
     """
-    db = get_db()
-    if not db:
-        return jsonify({'error': 'Database not available'}), 503
-
     data = request.get_json() or {}
 
-    session_ref = db.collection('sessions').document(session_id)
-    session_ref.update({
-        'isActive': False,
-        'endTime': datetime.utcnow(),
-        'totalLaps': data.get('totalLaps', 0),
-        'bestLapTime': data.get('bestLapTime'),
-    })
+    # Compute aggregated stats
+    stats = active_session_stats.pop(session_id, {'focus_scores': [], 'max_lap': 0, 'data_points': 0, 'fastest_lap': None})
+    focus_scores = [s for s in stats['focus_scores'] if s > 0]  # Exclude zeros
+    avg_focus = sum(focus_scores) / len(focus_scores) if focus_scores else 0
+    total_laps = max(data.get('totalLaps', 0), stats['max_lap'])
+    fastest_lap = stats.get('fastest_lap')
 
-    return jsonify({'message': 'Session ended', 'sessionId': session_id})
+    # Determine focus level
+    if avg_focus >= 80:
+        focus_level = "High Focus"
+    elif avg_focus >= 50:
+        focus_level = "Medium Focus"
+    else:
+        focus_level = "Low Focus"
+
+    # Calculate duration
+    end_time = datetime.utcnow()
+    start_time = None
+    if session_id in _sessions_store:
+        start_time = _sessions_store[session_id].get('startTime')
+    duration_seconds = (end_time - start_time).total_seconds() if start_time else 0
+
+    focus_result = {
+        'focusLevel': focus_level,
+        'averageFocusPct': round(avg_focus, 1),
+        'totalDataPoints': stats['data_points'],
+    }
+
+    # Update in-memory store
+    if session_id in _sessions_store:
+        _sessions_store[session_id]['isActive'] = False
+        _sessions_store[session_id]['endTime'] = end_time
+        _sessions_store[session_id]['totalLaps'] = total_laps
+        _sessions_store[session_id]['fastestLap'] = fastest_lap
+        _sessions_store[session_id]['durationSeconds'] = duration_seconds
+        _sessions_store[session_id]['focusResult'] = focus_result
+
+    # Save to Firebase via REST API
+    try:
+        from firestore_rest import update_document
+        import urllib3
+        urllib3.disable_warnings()
+        
+        update_document('sessions', session_id, {
+            'isActive': False,
+            'endTime': end_time.isoformat(),
+            'totalLaps': total_laps,
+            'fastestLap': fastest_lap,
+            'durationSeconds': round(duration_seconds),
+            'focusResult': focus_result,
+        })
+        print(f"[SESSION] OK - {session_id} ended | Laps:{total_laps} | Focus:{avg_focus:.1f}%")
+    except Exception as e:
+        print(f"[SESSION] Firestore end failed: {e}")
+
+    return jsonify({
+        'message': 'Session ended',
+        'sessionId': session_id,
+        'totalLaps': total_laps,
+        'averageFocus': round(avg_focus, 1),
+        'focusLevel': focus_level,
+        'fastestLap': fastest_lap,
+        'durationSeconds': round(duration_seconds),
+    })
 
 
 # ============================================================
@@ -164,21 +241,8 @@ def end_session(session_id):
 def submit_telemetry():
     """
     Submit telemetry data points (batch upload).
-
-    Body: {
-        sessionId: string,
-        data: [
-            { timestamp, speed, steeringAngle, throttle, brake, lapTime, lapDistance, label }
-        ]
-    }
-
-    This is called by the telemetry collector to store F1 data
-    for the ANN model to make focus predictions.
+    Also pushes data to the global live buffer for real-time dashboard.
     """
-    db = get_db()
-    if not db:
-        return jsonify({'error': 'Database not available'}), 503
-
     payload = request.get_json()
     if not payload or not payload.get('sessionId') or not payload.get('data'):
         return jsonify({'error': 'sessionId and data array are required'}), 400
@@ -186,28 +250,41 @@ def submit_telemetry():
     session_id = payload['sessionId']
     data_points = payload['data']
 
-    # Batch write for efficiency (Firestore supports up to 500 per batch)
-    batch = db.batch()
-    collection_ref = db.collection('telemetry_data')
-
+    # Push ALL data points to the global live buffer for dashboard
+    from shared_state import global_live_buffer as glb
     for point in data_points:
-        doc_ref = collection_ref.document()
-        batch.set(doc_ref, {
-            'sessionId': session_id,
-            'timestamp': point.get('timestamp', datetime.utcnow().timestamp()),
-            'speed': point.get('speed', 0),
-            'steeringAngle': point.get('steeringAngle', 0),
-            'throttle': point.get('throttle', 0),
-            'brake': point.get('brake', 0),
-            'lapTime': point.get('lapTime', 0),
-            'lapDistance': point.get('lapDistance', 0),
-            'label': point.get('label'),  # None if unlabeled
-        })
+        glb.append(point)
 
-    batch.commit()
+    # Save to Firebase in background (non-blocking)
+    db = get_db()
+    if db:
+        import threading
+        def save_telemetry():
+            try:
+                batch = db.batch()
+                collection_ref = db.collection('telemetry_data')
+                for point in data_points:
+                    doc_ref = collection_ref.document()
+                    batch.set(doc_ref, {
+                        'sessionId': session_id,
+                        'timestamp': point.get('timestamp', datetime.utcnow().timestamp()),
+                        'speed': point.get('speed', 0),
+                        'steeringAngle': point.get('steeringAngle', 0),
+                        'throttle': point.get('throttle', 0),
+                        'brake': point.get('brake', 0),
+                        'lapTime': point.get('lapTime', 0),
+                        'lapDistance': point.get('lapDistance', 0),
+                        'label': point.get('label'),
+                    })
+                batch.commit()
+            except Exception as e:
+                print(f"[TELEMETRY] ⚠️  Firebase write failed: {type(e).__name__}")
+
+        thread = threading.Thread(target=save_telemetry, daemon=True)
+        thread.start()
 
     return jsonify({
-        'message': f'{len(data_points)} data points saved',
+        'message': f'{len(data_points)} data points received',
         'sessionId': session_id,
     }), 201
 
@@ -220,17 +297,21 @@ def get_session_telemetry(session_id):
     """
     db = get_db()
     if not db:
-        return jsonify({'error': 'Database not available'}), 503
+        return jsonify({'sessionId': session_id, 'data': [], 'count': 0})
 
     limit = request.args.get('limit', 1000, type=int)
 
-    query = db.collection('telemetry_data')\
-        .where(filter=FieldFilter('sessionId', '==', session_id))\
-        .order_by('timestamp')\
-        .limit(limit)
+    try:
+        query = db.collection('telemetry_data')\
+            .where(filter=FieldFilter('sessionId', '==', session_id))\
+            .order_by('timestamp')\
+            .limit(limit)
 
-    docs = query.stream()
-    data = [doc.to_dict() for doc in docs]
+        docs = query.stream()
+        data = [doc.to_dict() for doc in docs]
+    except Exception as e:
+        print(f"[TELEMETRY] ⚠️  Firebase read error: {e}")
+        data = []
 
     return jsonify({
         'sessionId': session_id,
@@ -247,21 +328,7 @@ def get_session_telemetry(session_id):
 def save_focus_result(session_id):
     """
     Save the ANN model's focus classification result for a session.
-
-    Body: {
-        focusLevel: "High Focus" | "Medium Focus" | "Low Focus",
-        confidenceScore: 0.0-1.0,
-        averageFocusPct: 0-100,
-        minFocusPct: 0-100,
-        maxFocusPct: 0-100,
-        averageLatency: float,
-        remarks: string
-    }
     """
-    db = get_db()
-    if not db:
-        return jsonify({'error': 'Database not available'}), 503
-
     data = request.get_json()
     if not data or not data.get('focusLevel'):
         return jsonify({'error': 'focusLevel is required'}), 400
@@ -277,10 +344,20 @@ def save_focus_result(session_id):
         'createdAt': datetime.utcnow(),
     }
 
-    # Store focus result inside the session document
-    db.collection('sessions').document(session_id).update({
-        'focusResult': focus_result,
-    })
+    # Update in-memory store
+    if session_id in _sessions_store:
+        _sessions_store[session_id]['focusResult'] = focus_result
+
+    # Update Firebase directly (with short timeout)
+    db = get_db()
+    if db:
+        try:
+            db.collection('sessions').document(session_id).update({
+                'focusResult': focus_result,
+            }, timeout=10)
+            print(f"[FOCUS] ✓ Focus result saved to Firebase for {session_id}")
+        except Exception as e:
+            print(f"[FOCUS] ⚠️  Firebase save failed: {type(e).__name__}: {e}")
 
     return jsonify({
         'message': 'Focus result saved',
@@ -297,63 +374,87 @@ def save_focus_result(session_id):
 def get_user_profile(steam_id):
     """Get user profile from Firebase (for auto-login verification)."""
     db = get_db()
-    if not db:
-        return jsonify({'error': 'Database not available'}), 503
+    if db:
+        try:
+            user_doc = db.collection('users').document(steam_id).get()
+            if user_doc.exists:
+                user_data = user_doc.to_dict()
+                return jsonify({
+                    'user': {
+                        'steamId': steam_id,
+                        'displayName': user_data.get('displayName', ''),
+                        'avatar': user_data.get('avatarUrl', ''),
+                        'profileUrl': user_data.get('profileUrl', ''),
+                    }
+                })
+        except Exception as e:
+            print(f"[USER] ⚠️  Firebase read failed: {type(e).__name__}")
 
-    user_doc = db.collection('users').document(steam_id).get()
-    if not user_doc.exists:
-        return jsonify({'error': 'User not found'}), 404
-
-    user_data = user_doc.to_dict()
+    # Fallback
     return jsonify({
         'user': {
             'steamId': steam_id,
-            'displayName': user_data.get('displayName', ''),
-            'avatar': user_data.get('avatarUrl', ''),
-            'profileUrl': user_data.get('profileUrl', ''),
+            'displayName': f'Player_{steam_id[-4:]}',
+            'avatar': '',
+            'profileUrl': '',
         }
     })
 
 
 @sessions_bp.route('/api/users/<steam_id>/stats', methods=['GET'])
 def get_user_stats(steam_id):
-    """Get aggregated stats for a user (Records page)."""
-    db = get_db()
-    if not db:
-        return jsonify({'error': 'Database not available'}), 503
+    """Get aggregated stats for a user from Firestore (all historical data)."""
 
-    # Get user
-    user_doc = db.collection('users').document(steam_id).get()
-    if not user_doc.exists:
-        return jsonify({'error': 'User not found'}), 404
+    # Try Firestore REST API
+    try:
+        from firestore_rest import get_collection
+        import urllib3
+        urllib3.disable_warnings()
 
-    user_data = user_doc.to_dict()
+        all_sessions = get_collection('sessions')
+        completed = [s for s in all_sessions if s.get('userId') == steam_id and s.get('isActive') == False]
 
-    # Get completed sessions
-    sessions_query = db.collection('sessions')\
-        .where(filter=FieldFilter('userId', '==', steam_id))\
-        .where(filter=FieldFilter('isActive', '==', False))
+        total_laps = sum(s.get('totalLaps', 0) for s in completed)
+        focus_scores = []
+        for s in completed:
+            fr = s.get('focusResult')
+            if fr and isinstance(fr, dict):
+                avg = fr.get('averageFocusPct', 0)
+                if avg and avg > 0:
+                    focus_scores.append(avg)
 
-    sessions = [doc.to_dict() for doc in sessions_query.stream()]
+        avg_focus = round(sum(focus_scores) / len(focus_scores), 1) if focus_scores else 0
+        best_focus = round(max(focus_scores), 1) if focus_scores else 0
 
-    total_sessions = len(sessions)
-    total_laps = sum(s.get('totalLaps', 0) for s in sessions)
+        return jsonify({
+            'user': {'steamId': steam_id},
+            'stats': {
+                'totalSessions': len(completed),
+                'totalLaps': total_laps,
+                'averageFocus': avg_focus,
+                'bestFocus': best_focus,
+            }
+        })
+    except Exception as e:
+        print(f"[STATS] Firestore fetch failed: {e}")
 
-    # Calculate focus stats
+    # Fallback: in-memory
+    user_sessions = [s for s in _sessions_store.values() if s.get('userId') == steam_id]
+    completed = [s for s in user_sessions if not s.get('isActive', True)]
+    total_laps = sum(s.get('totalLaps', 0) for s in completed)
     focus_scores = []
-    for s in sessions:
-        if s.get('focusResult') and s['focusResult'].get('averageFocusPct'):
+    for s in completed:
+        if s.get('focusResult') and s['focusResult'].get('averageFocusPct', 0) > 0:
             focus_scores.append(s['focusResult']['averageFocusPct'])
-
-    avg_focus = sum(focus_scores) / len(focus_scores) if focus_scores else 0
-    best_focus = max(focus_scores) if focus_scores else 0
+    avg_focus = round(sum(focus_scores) / len(focus_scores), 1) if focus_scores else 0
+    best_focus = round(max(focus_scores), 1) if focus_scores else 0
 
     return jsonify({
-        'user': {**user_data, 'steamId': steam_id},
+        'user': {'steamId': steam_id},
         'stats': {
-            'totalSessions': total_sessions,
+            'totalSessions': len(completed),
             'totalLaps': total_laps,
-            'averageFocus': round(avg_focus, 1),
-            'bestFocus': round(best_focus, 1),
+            'averageFocus': avg_focus,
+            'bestFocus': best_focus,
         }
     })

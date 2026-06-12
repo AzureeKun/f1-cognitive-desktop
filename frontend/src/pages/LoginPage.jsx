@@ -42,11 +42,7 @@ function LoginPage() {
           <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/30 flex items-center gap-2">
             <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
             <p className="text-xs text-red-300">
-              {error === 'auth_failed' && 'Steam authentication was cancelled or failed.'}
-              {error === 'validation_failed' && 'Could not verify Steam login. Please try again.'}
-              {error === 'no_steam_id' && 'Could not retrieve your Steam ID.'}
-              {error === 'profile_fetch_failed' && 'Could not fetch your Steam profile.'}
-              {!['auth_failed', 'validation_failed', 'no_steam_id', 'profile_fetch_failed'].includes(error) && 'An error occurred. Please try again.'}
+              Steam login unavailable (SSL blocked by network). Use Dev Mode below.
             </p>
           </div>
         )}

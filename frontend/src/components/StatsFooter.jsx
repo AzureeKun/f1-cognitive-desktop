@@ -1,20 +1,19 @@
 import React from 'react'
-import { Zap, CircleDot, Gauge, Disc } from 'lucide-react'
+import { Zap, Gauge, Disc } from 'lucide-react'
 
-function StatsFooter({ topSpeed, maxG, avgThrottle, avgBrake, theme }) {
+function StatsFooter({ topSpeed, avgThrottle, avgBrake, theme }) {
   const primary = theme?.primary || '#00A19B'
   const card = theme?.card || '#12131a'
   const border = theme?.border || '#1e2028'
 
   const stats = [
     { label: 'Top Speed', value: topSpeed, unit: 'km/h', icon: Gauge, color: primary },
-    { label: 'Max G', value: maxG, unit: 'G', icon: CircleDot, color: '#C8CCCE' },
     { label: 'Avg Throttle', value: avgThrottle, unit: '%', icon: Zap, color: primary },
     { label: 'Avg Brake', value: avgBrake, unit: '%', icon: Disc, color: '#e74c3c' },
   ]
 
   return (
-    <div className="mt-3 grid grid-cols-4 gap-3">
+    <div className="mt-3 grid grid-cols-3 gap-3">
       {stats.map((stat) => (
         <div key={stat.label} className="flex items-center gap-2 py-2 px-3 rounded-xl border transition-all duration-200 hover:border-white/10" style={{ backgroundColor: card, borderColor: border }}>
           <stat.icon className="w-4 h-4 opacity-70" style={{ color: stat.color }} />
