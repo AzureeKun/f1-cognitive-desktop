@@ -19,10 +19,11 @@ import requests
 import sys
 import socketio
 
-# Configuration
+# Configuration — uses environment variable for production
+import os
 UDP_IP = "127.0.0.1"
 UDP_PORT = 20777
-API_URL = "http://localhost:5000"
+API_URL = os.getenv('BACKEND_URL', 'http://localhost:5000')
 
 # F1 25 Packet IDs
 PACKET_LAP_DATA = 2

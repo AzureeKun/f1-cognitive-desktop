@@ -3,7 +3,7 @@
  * All real-time telemetry and session data flows through here.
  */
 
-const API_URL = 'http://localhost:5000'
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
 
 /**
  * Start a new driving session

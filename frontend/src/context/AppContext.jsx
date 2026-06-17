@@ -3,8 +3,8 @@ import { getTeamTheme, DEFAULT_THEME } from '../utils/themes'
 
 const AppContext = createContext()
 
-// Backend API URL
-const API_URL = 'http://localhost:5000'
+// Backend API URL (uses Vite env variable for production)
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
 
 export function AppProvider({ children }) {
   // Auth state - loads from localStorage on startup (auto-login)

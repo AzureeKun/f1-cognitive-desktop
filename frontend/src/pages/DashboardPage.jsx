@@ -11,6 +11,8 @@ import PedalInput from '../components/PedalInput'
 import TelemetryTrace from '../components/TelemetryTrace'
 import StatsFooter from '../components/StatsFooter'
 
+const API_URL = import.meta.env.VITE_API_URL || API_URL
+
 function DashboardPage() {
   const { user, theme } = useApp()
   const navigate = useNavigate()
@@ -42,20 +44,18 @@ function DashboardPage() {
   const handleToggleLive = async () => {
     try {
       if (isLiveOn) {
-        // STOP: End session first, then stop UDP
         if (sessionId) {
-          await fetch('http://localhost:5000/api/sessions/' + sessionId + '/end', {
+          await fetch(`${API_URL}/api/sessions/${sessionId}/end`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ totalLaps: lapCountRef.current }),
           })
           setSessionId(null)
         }
-        await fetch('http://localhost:5000/api/udp/stop', { method: 'POST' })
+        await fetch(`${API_URL}/api/udp/stop`, { method: 'POST' })
         setIsLiveOn(false)
       } else {
-        // START: Create session in Firebase, then start UDP
-        const sessionRes = await fetch('http://localhost:5000/api/sessions', {
+        const sessionRes = await fetch(`${API_URL}/api/sessions`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -68,14 +68,12 @@ function DashboardPage() {
         const sessionData = await sessionRes.json()
         if (sessionData.sessionId) {
           setSessionId(sessionData.sessionId)
-          // Start UDP with the session ID
-          await fetch('http://localhost:5000/api/udp/start', {
+          await fetch(`${API_URL}/api/udp/start`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ sessionId: sessionData.sessionId }),
           })
           setIsLiveOn(true)
-          // Reset dashboard state
           lapCountRef.current = 0
           setLapHistory([])
           setTopSpeed(0)
@@ -90,30 +88,29 @@ function DashboardPage() {
   useEffect(() => {
     return () => {
       if (sessionId) {
-        fetch('http://localhost:5000/api/sessions/' + sessionId + '/end', {
+        fetch(`${API_URL}/api/sessions/${sessionId}/end`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ totalLaps: lapCountRef.current }),
         }).catch(() => {})
-        fetch('http://localhost:5000/api/udp/stop', { method: 'POST' }).catch(() => {})
+        fetch(`${API_URL}/api/udp/stop`, { method: 'POST' }).catch(() => {})
       }
-      // Always close overlay when leaving dashboard
-      fetch('http://localhost:5000/api/overlay/stop', { method: 'POST' }).catch(() => {})
+      fetch(`${API_URL}/api/overlay/stop`, { method: 'POST' }).catch(() => {})
     }
   }, [sessionId])
 
-  // Open/close overlay (launches or stops Electron overlay app)
+  // Open/close overlay
   const handleOpenOverlay = async () => {
     try {
       if (isOverlayOn) {
-        await fetch('http://localhost:5000/api/overlay/stop', { method: 'POST' })
+        await fetch(`${API_URL}/api/overlay/stop`, { method: 'POST' })
         setIsOverlayOn(false)
       } else {
-        await fetch('http://localhost:5000/api/overlay/launch', { method: 'POST' })
+        await fetch(`${API_URL}/api/overlay/launch`, { method: 'POST' })
         setIsOverlayOn(true)
       }
     } catch (err) {
-      window.open('http://localhost:5000/overlay', '_blank', 'width=420,height=260')
+      window.open(`${API_URL}/overlay`, '_blank', 'width=420,height=260')
       setIsOverlayOn(true)
     }
   }
@@ -127,7 +124,7 @@ function DashboardPage() {
 
   // Connect WebSocket on mount
   useEffect(() => {
-    const socket = io('http://localhost:5000', {
+    const socket = io(API_URL, {
       transports: ['websocket'],
       reconnection: true,
       reconnectionDelay: 1000,
@@ -152,7 +149,7 @@ function DashboardPage() {
       }
     })
 
-    // Lap completion event — directly populates Lap History
+    // Lap completion event  Edirectly populates Lap History
     socket.on('live_lap_completed', (data) => {
       const lapNumber = data.lapNumber || 0
       const lapTimeRaw = data.lapTimeRaw || 0
@@ -215,7 +212,7 @@ function DashboardPage() {
     <div className="h-screen w-screen p-3 flex flex-col overflow-hidden" style={{ backgroundColor: theme.bg }}>
       <Header
         trackName="LIVE SESSION"
-        sessionType={isLiveOn ? 'Receiving Telemetry' : 'Ready — Click LIVE ON to start'}
+        sessionType={isLiveOn ? 'Receiving Telemetry' : 'Ready  EClick LIVE ON to start'}
         isConnected={isLiveOn}
         currentLapTime={formatLapTime(currentData.lapTime)}
         focusScore={focusScore || 0}

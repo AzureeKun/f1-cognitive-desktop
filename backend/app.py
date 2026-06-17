@@ -49,11 +49,13 @@ load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
 
-# CORS - allow frontend and Electron overlay (file:// origin sends null)
-CORS(app, supports_credentials=True, origins=[
+# CORS - allow frontend origins (local + production)
+CORS(app, supports_credentials=True, resources={r"/api/*": {"origins": "*"}}, origins=[
     os.getenv('FRONTEND_URL', 'http://localhost:3000'),
-    'null',  # Electron file:// protocol sends Origin: null
-], resources={r"/api/*": {"origins": "*"}})
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'null',
+])
 
 # SocketIO - real-time WebSocket communication
 # Uses 'threading' async mode with simple-websocket for WebSocket support
