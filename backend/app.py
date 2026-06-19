@@ -3,14 +3,21 @@ F1 Cognitive Focus Telemetry - Backend API (Full Integration)
 
 Components:
 - Flask web framework
-- Firebase Firestore (cloud database)
+- Firebase Firestore (cloud database via REST API)
 - Steam OpenID 2.0 authentication
 - ANN Model (model_kognitif_ann.h5) for focus prediction
 - REST API for telemetry, sessions, and real-time predictions
 """
 
 # ============================================================
-# SSL Fix - MUST be before any other imports
+# GEVENT MONKEY PATCH — MUST be the absolute first thing
+# Fixes: "maximum recursion depth exceeded" with gevent + ssl/requests
+# ============================================================
+from gevent import monkey
+monkey.patch_all()
+
+# ============================================================
+# SSL & Environment Setup
 # ============================================================
 import os
 import ssl
@@ -58,11 +65,11 @@ CORS(app, supports_credentials=True, resources={r"/api/*": {"origins": "*"}}, or
 ])
 
 # SocketIO - real-time WebSocket communication
-# Uses 'threading' async mode with simple-websocket for WebSocket support
+# Uses 'gevent' async mode for production (Render + gunicorn-geventwebsocket)
 socketio = SocketIO(
     app,
     cors_allowed_origins="*",
-    async_mode='threading',
+    async_mode='gevent',
     logger=False,
     engineio_logger=False,
 )
@@ -138,19 +145,20 @@ def steam_callback():
         return redirect(f'{FRONTEND_URL}?error=profile_fetch_failed')
 
     # Save/update user in Firebase (non-blocking, don't crash login if it fails)
-    db = get_db()
-    if db:
-        try:
-            user_ref = db.collection('users').document(steam_id)
-            user_ref.set({
-                'displayName': user_data['displayName'],
-                'avatarUrl': user_data['avatar'],
-                'profileUrl': user_data['profileUrl'],
-                'lastLogin': datetime.utcnow(),
-            }, merge=True, timeout=5)
-            print(f"[AUTH] User saved: {user_data['displayName']} ({steam_id})")
-        except Exception as e:
-            print(f"[AUTH] Firebase save skipped: {type(e).__name__}")
+    # Save user to Firebase via REST API (avoids gRPC DeadlineExceeded)
+    try:
+        from firestore_rest import set_document
+        import urllib3
+        urllib3.disable_warnings()
+        set_document('users', steam_id, {
+            'displayName': user_data['displayName'],
+            'avatarUrl': user_data['avatar'],
+            'profileUrl': user_data['profileUrl'],
+            'lastLogin': datetime.utcnow().isoformat(),
+        })
+        print(f"[AUTH] User saved: {user_data['displayName']} ({steam_id})")
+    except Exception as e:
+        print(f"[AUTH] Firebase save skipped: {e}")
 
     # Store in Flask session
     session['user'] = user_data
