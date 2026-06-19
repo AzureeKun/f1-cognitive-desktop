@@ -70,8 +70,8 @@ socketio = SocketIO(
     app,
     cors_allowed_origins="*",
     async_mode='eventlet',
-    logger=False,
-    engineio_logger=False,
+    logger=True,
+    engineio_logger=True,
 )
 
 # Register routes
@@ -798,13 +798,15 @@ def health_check():
 
 @socketio.on('connect')
 def handle_connect():
-    print(f"[WS] Client connected: {request.sid}")
+    print(f"[WS] ✓ Client CONNECTED: sid={request.sid}", flush=True)
+    print(f"[WS]   Transport: {request.environ.get('HTTP_UPGRADE', 'polling')}", flush=True)
+    print(f"[WS]   Origin: {request.environ.get('HTTP_ORIGIN', 'unknown')}", flush=True)
     emit('status', {'connected': True, 'aiModel': ai_ready})
 
 
 @socketio.on('disconnect')
 def handle_disconnect():
-    print(f"[WS] Client disconnected: {request.sid}")
+    print(f"[WS] ✗ Client DISCONNECTED: sid={request.sid}", flush=True)
 
 
 @socketio.on('control_overlay')
@@ -823,9 +825,10 @@ def handle_control_overlay(data):
 @socketio.on('telemetry_data')
 def handle_telemetry(data):
     """
-    Receives telemetry from telemetry_live.py via WebSocket (fallback path).
-    The native UDP thread in app.py is the primary path now.
+    Receives telemetry from telemetry_live.py via WebSocket.
     """
+    print(f"[WS] << telemetry_data received: speed={data.get('speed', '?')}, steer={data.get('steeringAngle', '?'):.3f}", flush=True)
+
     # Run AI prediction
     result = predict_single(
         speed=data.get('speed', 0),
@@ -845,6 +848,7 @@ def handle_telemetry(data):
 
     # Broadcast to ALL connected clients
     socketio.emit('live_telemetry', broadcast)
+    print(f"[WS] >> live_telemetry broadcast: focus={result.get('focusScore', '?')}%", flush=True)
 
     # Track session stats for aggregation on end
     session_id = data.get('sessionId')

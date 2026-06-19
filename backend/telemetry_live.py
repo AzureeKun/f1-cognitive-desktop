@@ -69,26 +69,41 @@ def start_live_telemetry():
         sys.exit(1)
 
     # Connect WebSocket
-    print(f"\n[*] Connecting WebSocket...")
-    sio = socketio.Client(reconnection=True, reconnection_attempts=5, reconnection_delay=1)
+    print(f"\n[*] Connecting WebSocket to {API_URL}...")
+    sio = socketio.Client(
+        reconnection=True,
+        reconnection_attempts=10,
+        reconnection_delay=2,
+        logger=True,
+        engineio_logger=True,
+    )
 
     @sio.event
     def connect():
-        print(f"    ✓ WebSocket connected!")
+        print(f"    ✓ WebSocket CONNECTED to {API_URL}!", flush=True)
+        print(f"    Transport: {sio.transport()}", flush=True)
 
     @sio.event
     def disconnect():
-        print(f"    WebSocket disconnected")
+        print(f"    ✗ WebSocket DISCONNECTED from {API_URL}", flush=True)
+
+    @sio.event
+    def connect_error(data):
+        print(f"    ✗ WebSocket CONNECTION ERROR: {data}", flush=True)
 
     try:
-        sio.connect(API_URL, transports=['websocket'], wait_timeout=5)
+        print(f"    Attempting websocket transport...", flush=True)
+        sio.connect(API_URL, transports=['websocket'], wait_timeout=10)
+        print(f"    Connected! Transport = {sio.transport()}", flush=True)
     except Exception as e:
-        print(f"    ⚠️  WebSocket failed ({e}), trying polling transport...")
+        print(f"    ⚠️  WebSocket-only failed: {e}", flush=True)
+        print(f"    Trying polling+websocket...", flush=True)
         try:
-            sio.connect(API_URL, wait_timeout=5)
+            sio.connect(API_URL, wait_timeout=10)
+            print(f"    Connected via polling! Transport = {sio.transport()}", flush=True)
         except Exception as e2:
-            print(f"    ✗ All transports failed: {e2}")
-            print(f"    Will use HTTP fallback.")
+            print(f"    ✗ ALL TRANSPORTS FAILED: {e2}", flush=True)
+            print(f"    Will use HTTP fallback (slower).", flush=True)
             sio = None
 
     # Use session from dashboard or create new one
@@ -187,6 +202,10 @@ def start_live_telemetry():
                     if speed > 0:
                         total_points += 1
 
+                        # Log first few UDP packets to confirm data is coming in
+                        if total_points <= 3:
+                            print(f"    [UDP #{total_points}] speed={speed}, throttle={throttle:.2f}, steer={steer:.4f}, brake={brake:.2f}", flush=True)
+
                         # Emit via WebSocket every EMIT_INTERVAL packets
                         if total_points % EMIT_INTERVAL == 0:
                             point = {
@@ -202,10 +221,13 @@ def start_live_telemetry():
                             }
 
                             if sio and sio.connected:
-                                # WebSocket emit — near-instant
                                 sio.emit('telemetry_data', point)
+                                if total_points <= 10 or total_points % 100 == 0:
+                                    print(f"    [EMIT #{total_points}] >> telemetry_data sent via WebSocket (speed={speed})", flush=True)
                             else:
                                 # Fallback: HTTP POST
+                                if total_points <= 10:
+                                    print(f"    [EMIT #{total_points}] >> HTTP fallback (sio connected={sio.connected if sio else 'None'})", flush=True)
                                 try:
                                     requests.post(f"{API_URL}/api/predict/single", json=point, timeout=1)
                                 except:
@@ -213,8 +235,9 @@ def start_live_telemetry():
 
                         # Print status every 50 points
                         if total_points % 50 == 0:
+                            ws_status = f"WS:{'ON' if (sio and sio.connected) else 'OFF'}"
                             focus = last_prediction.get('focusScore', '?') if last_prediction else '?'
-                            print(f"    [#{total_points:>5}] Speed: {speed:>3.0f} km/h | Steer: {steer*360:>6.1f}° | Focus: {focus}%", end='\r')
+                            print(f"    [#{total_points:>5}] Speed: {speed:>3.0f} km/h | Focus: {focus}% | {ws_status}", end='\r', flush=True)
 
             # Listen for broadcast predictions
             if sio and sio.connected:
