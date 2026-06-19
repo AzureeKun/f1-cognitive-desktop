@@ -103,29 +103,30 @@ function DashboardPage() {
     }
   }, [sessionId])
 
-  // Open/close overlay as a floating popup window (always-on-top in borderless windowed games)
+  // Open/close overlay as a minimal popup window
   const handleOpenOverlay = () => {
     if (isOverlayOn) {
-      // Close the popup
       if (window._overlayPopup && !window._overlayPopup.closed) {
         window._overlayPopup.close()
       }
       window._overlayPopup = null
       setIsOverlayOn(false)
     } else {
-      // Open a small always-on-top popup window with the overlay
+      // Open minimal popup — positioned bottom-right of screen
+      const w = 440, h = 270
+      const left = window.screen.width - w - 20
+      const top = window.screen.height - h - 80
       const overlayUrl = `${API_URL}/overlay`
       const popup = window.open(
         overlayUrl,
         'F1FocusOverlay',
-        'width=440,height=270,top=50,left=50,toolbar=no,menubar=no,scrollbars=no,resizable=yes,status=no'
+        `popup,width=${w},height=${h},left=${left},top=${top},toolbar=no,location=no,menubar=no,scrollbars=no,status=no`
       )
       if (popup) {
         window._overlayPopup = popup
         setIsOverlayOn(true)
-        // Auto-detect if user closes the popup manually
         const checkClosed = setInterval(() => {
-          if (popup.closed) {
+          if (!popup || popup.closed) {
             clearInterval(checkClosed)
             setIsOverlayOn(false)
             window._overlayPopup = null
