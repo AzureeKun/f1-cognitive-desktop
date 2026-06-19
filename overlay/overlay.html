@@ -129,8 +129,9 @@
   </div>
 
   <script>
-    const API = 'http://localhost:5000'
-    const socket = io(API, { transports: ['websocket'], reconnection: true })
+    // Auto-detect the backend URL (works in both local and production)
+    const API = window.location.origin
+    const socket = io(API, { transports: ['websocket', 'polling'], reconnection: true, reconnectionDelay: 2000 })
 
     // ── Connection status ──
     socket.on('connect', () => { document.getElementById('dot').className = 'dot live'; document.getElementById('status').textContent = 'LIVE' })
@@ -238,9 +239,17 @@
         const t = await r.json()
         document.documentElement.style.setProperty('--primary', t.primary)
         document.querySelector('.hud').style.borderColor = t.primary + '40'
+        // Update focus ring color if score is high
+        const scoreEl = document.getElementById('focus')
+        const score = parseInt(scoreEl.textContent) || 0
+        if (score >= 80) {
+          document.getElementById('ring').style.stroke = t.primary
+          scoreEl.style.color = t.primary
+          document.getElementById('focus-label').style.color = t.primary
+        }
       } catch(e) {}
     }
-    syncTheme(); setInterval(syncTheme, 8000)
+    syncTheme(); setInterval(syncTheme, 3000)
   </script>
 </body>
 </html>
