@@ -95,8 +95,8 @@ def steam_login():
     params = {
         'openid.ns': 'http://specs.openid.net/auth/2.0',
         'openid.mode': 'checkid_setup',
-        'openid.return_to': f'{BACKEND_URL}/api/auth/steam/callback',
-        'openid.realm': BACKEND_URL,
+        'openid.return_to': 'https://f1-cognitive-telemetry.onrender.com/api/auth/steam/callback',
+        'openid.realm': 'https://f1-cognitive-telemetry.onrender.com',
         'openid.identity': 'http://specs.openid.net/auth/2.0/identifier_select',
         'openid.claimed_id': 'http://specs.openid.net/auth/2.0/identifier_select',
     }
