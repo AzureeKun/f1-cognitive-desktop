@@ -95,19 +95,42 @@ function DashboardPage() {
         }).catch(() => {})
         fetch(`${API_URL}/api/udp/stop`, { method: 'POST' }).catch(() => {})
       }
-      fetch(`${API_URL}/api/overlay/stop`, { method: 'POST' }).catch(() => {})
+      // Close overlay popup when leaving dashboard
+      if (window._overlayPopup && !window._overlayPopup.closed) {
+        window._overlayPopup.close()
+      }
+      window._overlayPopup = null
     }
   }, [sessionId])
 
-  // Open/close overlay via WebSocket signaling (controls remote Electron app)
+  // Open/close overlay as a floating popup window (always-on-top in borderless windowed games)
   const handleOpenOverlay = () => {
-    if (socketRef.current) {
-      if (isOverlayOn) {
-        socketRef.current.emit('control_overlay', { action: 'STOP' })
-        setIsOverlayOn(false)
-      } else {
-        socketRef.current.emit('control_overlay', { action: 'START' })
+    if (isOverlayOn) {
+      // Close the popup
+      if (window._overlayPopup && !window._overlayPopup.closed) {
+        window._overlayPopup.close()
+      }
+      window._overlayPopup = null
+      setIsOverlayOn(false)
+    } else {
+      // Open a small always-on-top popup window with the overlay
+      const overlayUrl = `${API_URL}/overlay`
+      const popup = window.open(
+        overlayUrl,
+        'F1FocusOverlay',
+        'width=440,height=270,top=50,left=50,toolbar=no,menubar=no,scrollbars=no,resizable=yes,status=no'
+      )
+      if (popup) {
+        window._overlayPopup = popup
         setIsOverlayOn(true)
+        // Auto-detect if user closes the popup manually
+        const checkClosed = setInterval(() => {
+          if (popup.closed) {
+            clearInterval(checkClosed)
+            setIsOverlayOn(false)
+            window._overlayPopup = null
+          }
+        }, 1000)
       }
     }
   }
