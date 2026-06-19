@@ -10,11 +10,11 @@ Components:
 """
 
 # ============================================================
-# GEVENT MONKEY PATCH — MUST be the absolute first thing
-# Fixes: "maximum recursion depth exceeded" with gevent + ssl/requests
+# EVENTLET MONKEY PATCH — MUST be the absolute first thing
+# Fixes: "maximum recursion depth exceeded" with eventlet + ssl/requests
 # ============================================================
-from gevent import monkey
-monkey.patch_all()
+import eventlet
+eventlet.monkey_patch()
 
 # ============================================================
 # SSL & Environment Setup
@@ -65,11 +65,11 @@ CORS(app, supports_credentials=True, resources={r"/api/*": {"origins": "*"}}, or
 ])
 
 # SocketIO - real-time WebSocket communication
-# Uses 'gevent' async mode for production (Render + gunicorn-geventwebsocket)
+# Uses 'eventlet' async mode for production (Render + gunicorn eventlet worker)
 socketio = SocketIO(
     app,
     cors_allowed_origins="*",
-    async_mode='gevent',
+    async_mode='eventlet',
     logger=False,
     engineio_logger=False,
 )
