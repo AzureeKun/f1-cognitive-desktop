@@ -99,19 +99,16 @@ function DashboardPage() {
     }
   }, [sessionId])
 
-  // Open/close overlay
-  const handleOpenOverlay = async () => {
-    try {
+  // Open/close overlay via WebSocket signaling (controls remote Electron app)
+  const handleOpenOverlay = () => {
+    if (socketRef.current) {
       if (isOverlayOn) {
-        await fetch(`${API_URL}/api/overlay/stop`, { method: 'POST' })
+        socketRef.current.emit('control_overlay', { action: 'STOP' })
         setIsOverlayOn(false)
       } else {
-        await fetch(`${API_URL}/api/overlay/launch`, { method: 'POST' })
+        socketRef.current.emit('control_overlay', { action: 'START' })
         setIsOverlayOn(true)
       }
-    } catch (err) {
-      window.open(`${API_URL}/overlay`, '_blank', 'width=420,height=260')
-      setIsOverlayOn(true)
     }
   }
 

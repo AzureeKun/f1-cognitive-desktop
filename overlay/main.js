@@ -1,54 +1,44 @@
 const { app, BrowserWindow, globalShortcut, screen } = require('electron')
+const { io } = require('socket.io-client')
 
 let overlayWindow = null
+let socket = null
+
+const BACKEND_URL = 'https://f1-cognitive-telemetry.onrender.com'
 
 function createOverlay() {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize
 
   overlayWindow = new BrowserWindow({
-    // Position: bottom-right corner of screen
     x: width - 440,
     y: height - 280,
     width: 420,
     height: 260,
-
-    // Always on top (initial flag)
     alwaysOnTop: true,
-
-    // Transparent & frameless — critical for overlay
     frame: false,
     transparent: true,
     resizable: false,
     skipTaskbar: true,
     hasShadow: false,
-
-    // Prevent white flash on load
     show: false,
     backgroundColor: '#00000000',
-
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      webSecurity: false,  // Allow fetch to localhost from file:// origin
+      webSecurity: false,
     },
   })
 
-  // Load the overlay page from Flask backend (same origin as API = no CORS)
-  overlayWindow.loadURL('http://localhost:5000/overlay')
+  overlayWindow.loadURL(`${BACKEND_URL}/overlay`)
 
-  // Show window only after content is ready (prevents white flash)
   overlayWindow.once('ready-to-show', () => {
-    overlayWindow.show()
+    // Start hidden — web dashboard controls visibility
+    overlayWindow.hide()
+    console.log('[Overlay] Ready (hidden). Waiting for START command...')
   })
 
-  // Force HIGHEST always-on-top level with max priority
-  // 'screen-saver' level + priority 1 = above borderless fullscreen games
   overlayWindow.setAlwaysOnTop(true, 'screen-saver', 1)
-
-  // Click-through: mouse passes straight through to the game
   overlayWindow.setIgnoreMouseEvents(true, { forward: true })
-
-  // Mark initial state
   overlayWindow._ignoring = true
 
   overlayWindow.on('closed', () => {
@@ -56,10 +46,42 @@ function createOverlay() {
   })
 }
 
+function connectToBackend() {
+  socket = io(BACKEND_URL, {
+    transports: ['websocket'],
+    reconnection: true,
+    reconnectionDelay: 2000,
+  })
+
+  socket.on('connect', () => {
+    console.log('[WS] Connected to backend')
+  })
+
+  socket.on('disconnect', () => {
+    console.log('[WS] Disconnected')
+  })
+
+  // Listen for overlay commands from the web dashboard
+  socket.on('overlay_command', (data) => {
+    console.log('[WS] Overlay command received:', data.action)
+    if (!overlayWindow) return
+
+    if (data.action === 'START') {
+      overlayWindow.show()
+      overlayWindow.setAlwaysOnTop(true, 'screen-saver', 1)
+      console.log('[Overlay] SHOWN')
+    } else if (data.action === 'STOP') {
+      overlayWindow.hide()
+      console.log('[Overlay] HIDDEN')
+    }
+  })
+}
+
 app.whenReady().then(() => {
   createOverlay()
+  connectToBackend()
 
-  // Ctrl+Shift+F — Toggle overlay visibility (show/hide)
+  // Ctrl+Shift+F — Toggle overlay visibility locally
   globalShortcut.register('CommandOrControl+Shift+F', () => {
     if (overlayWindow) {
       if (overlayWindow.isVisible()) {
@@ -70,7 +92,7 @@ app.whenReady().then(() => {
     }
   })
 
-  // Ctrl+Shift+G — Toggle click-through (to reposition if needed)
+  // Ctrl+Shift+G — Toggle click-through
   globalShortcut.register('CommandOrControl+Shift+G', () => {
     if (overlayWindow) {
       if (overlayWindow._ignoring) {
@@ -86,6 +108,7 @@ app.whenReady().then(() => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
+  if (socket) socket.disconnect()
 })
 
 app.on('window-all-closed', () => {

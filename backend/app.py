@@ -807,6 +807,19 @@ def handle_disconnect():
     print(f"[WS] Client disconnected: {request.sid}")
 
 
+@socketio.on('control_overlay')
+def handle_control_overlay(data):
+    """
+    Relay overlay control commands from web dashboard to Electron app.
+    Dashboard emits: { action: 'START' } or { action: 'STOP' }
+    Electron listens for: 'overlay_command'
+    """
+    action = data.get('action', '')
+    print(f"[WS] Overlay command: {action}")
+    # Broadcast to ALL clients (Electron app will pick this up)
+    socketio.emit('overlay_command', data)
+
+
 @socketio.on('telemetry_data')
 def handle_telemetry(data):
     """
