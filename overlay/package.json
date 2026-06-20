@@ -36,7 +36,8 @@
           "arch": ["x64"]
         }
       ],
-      "icon": "icon.ico"
+      "icon": "icon.ico",
+      "signAndEditExecutable": false
     },
     "portable": {
       "artifactName": "F1-Focus-Overlay.exe"
