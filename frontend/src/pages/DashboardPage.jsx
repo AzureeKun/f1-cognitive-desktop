@@ -53,8 +53,9 @@ function DashboardPage() {
           })
           setSessionId(null)
         }
-        // Signal overlay to hide
+        // Signal forwarder to STOP capturing UDP
         if (socketRef.current) {
+          socketRef.current.emit('toggle_telemetry', { status: 'STOP' })
           socketRef.current.emit('control_overlay', { action: 'STOP' })
         }
         setIsLiveOn(false)
@@ -77,8 +78,9 @@ function DashboardPage() {
           lapCountRef.current = 0
           setLapHistory([])
           setTopSpeed(0)
-          // Signal overlay to show
+          // Signal forwarder to START capturing UDP
           if (socketRef.current) {
+            socketRef.current.emit('toggle_telemetry', { status: 'START', sessionId: sessionData.sessionId })
             socketRef.current.emit('control_overlay', { action: 'START' })
           }
         }

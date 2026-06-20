@@ -813,13 +813,25 @@ def handle_disconnect():
 def handle_control_overlay(data):
     """
     Relay overlay control commands from web dashboard to Electron app.
-    Dashboard emits: { action: 'START' } or { action: 'STOP' }
-    Electron listens for: 'overlay_command'
     """
     action = data.get('action', '')
-    print(f"[WS] Overlay command: {action}")
-    # Broadcast to ALL clients (Electron app will pick this up)
+    print(f"[EVENT] Received control_overlay: {action}")
     socketio.emit('overlay_command', data)
+
+
+@socketio.on('toggle_telemetry')
+def handle_toggle_telemetry(data):
+    """
+    Relay telemetry start/stop command from dashboard to the local Python forwarder.
+    Dashboard emits: { status: 'START', sessionId: '...' } or { status: 'STOP' }
+    Forwarder listens for: 'forwarder_command'
+    """
+    status = data.get('status', '')
+    session_id = data.get('sessionId', '')
+    print(f"[EVENT] Received toggle_telemetry: status={status}, sessionId={session_id}")
+    # Broadcast to ALL clients — the local forwarder will pick this up
+    socketio.emit('forwarder_command', data)
+    print(f"[EVENT] Broadcasted forwarder_command to all clients")
 
 
 @socketio.on('telemetry_data')
