@@ -1,6 +1,20 @@
 node_modules/
 dist/
-frontend-build/
-python-backend/__pycache__/
-python-backend/.env
-*.exe
+build_temp/
+python-backend-exe/
+__pycache__/
+*.pyc
+.env
+
+# Large model files not needed (only ANN .h5 is used)
+python-backend/ai_model/model_kognitif_rf.pkl
+python-backend/ai_model/model_kognitif_svm.pkl
+
+# Firebase service account credentials (sensitive)
+python-backend/serviceAccountKey.json
+python-backend/f1-cognitive-telemetry-firebase-adminsdk-fbsvc-d9c1a49591.json
+
+# Build artifacts
+backend.spec
+*.log
+package-lock.json

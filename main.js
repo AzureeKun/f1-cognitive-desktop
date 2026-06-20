@@ -27,10 +27,8 @@ let pythonProcess = null
 // ─── Find Python Backend Path ────────────────────────────────────────────────
 function getPythonBackendPath() {
   if (isDev) {
-    // Development: use the development backend directly
-    return path.join(__dirname, '..', 'development', 'backend')
+    return path.join(__dirname, 'python-backend')
   } else {
-    // Production: bundled in resources
     return path.join(process.resourcesPath, 'python-backend')
   }
 }
@@ -116,6 +114,7 @@ function createMainWindow() {
     minWidth: 1200,
     minHeight: 700,
     title: 'F1 Cognitive Telemetry',
+    icon: path.join(__dirname, 'icon.jpg'),
     backgroundColor: '#0a0a0f',
     webPreferences: {
       nodeIntegration: false,
@@ -125,18 +124,18 @@ function createMainWindow() {
   })
 
   if (isDev) {
-    // Development: load from Vite dev server
-    mainWindow.loadURL('http://localhost:3000')
-    mainWindow.webContents.openDevTools()
-  } else {
-    // Production: load from built frontend files
+    // Development: load from built frontend files in the app folder
     const frontendPath = path.join(__dirname, 'frontend-build', 'index.html')
     if (fs.existsSync(frontendPath)) {
       mainWindow.loadFile(frontendPath)
     } else {
-      // Fallback: load from backend
-      mainWindow.loadURL(BACKEND_URL)
+      // Fallback to Vite dev server if frontend isn't built
+      mainWindow.loadURL('http://localhost:3000')
     }
+  } else {
+    // Production: load from built frontend files
+    const frontendPath = path.join(__dirname, 'frontend-build', 'index.html')
+    mainWindow.loadFile(frontendPath)
   }
 
   mainWindow.on('closed', () => {

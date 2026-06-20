@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>F1 Focus HUD</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root { --primary: #04BFAD; }
+    html, body { background: transparent !important; overflow: hidden; }
+    body { -webkit-app-region: drag; font-family: 'Segoe UI', system-ui, sans-serif; }
+
+    .hud {
+      background: rgba(8, 8, 12, 0.85);
+      border: 1px solid rgba(4, 191, 173, 0.25);
+      border-radius: 14px;
+      padding: 12px 14px;
+      height: 100vh;
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      grid-template-rows: auto 1fr;
+      gap: 10px;
+      backdrop-filter: blur(6px);
+      position: relative;
+    }
+
+    /* Status indicator */
+    .status { position: absolute; top: 6px; right: 10px; display: flex; align-items: center; gap: 4px; }
+    .status .dot { width: 5px; height: 5px; border-radius: 50%; background: #565F64; }
+    .status .dot.live { background: var(--primary); animation: pulse 2s infinite; }
+    .status .text { font-size: 7px; color: rgba(255,255,255,0.3); text-transform: uppercase; letter-spacing: 0.5px; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    /* Focus gauge — spans both rows on left */
+    .focus-section {
+      grid-row: 1 / 3;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .focus-ring { position: relative; width: 100px; height: 100px; }
+    .focus-ring svg { transform: rotate(-90deg); }
+    .focus-ring .track { stroke: rgba(255,255,255,0.06); }
+    .focus-ring .progress { transition: stroke-dashoffset 0.4s ease, stroke 0.3s ease; }
+    .focus-ring .center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .focus-ring .score { font-size: 28px; font-weight: 800; font-family: 'Consolas', monospace; color: var(--primary); }
+    .focus-ring .unit { font-size: 8px; color: rgba(255,255,255,0.35); text-transform: uppercase; letter-spacing: 1px; }
+    .focus-label { font-size: 8px; color: var(--primary); text-transform: uppercase; letter-spacing: 1.5px; font-weight: 600; margin-top: 4px; }
+
+    /* Stats row (top-right) */
+    .stats-row {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      padding: 4px 0;
+    }
+    .stat { display: flex; flex-direction: column; }
+    .stat .label { font-size: 7px; color: rgba(255,255,255,0.3); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 1px; }
+    .stat .value { font-size: 18px; font-weight: 700; color: #fff; font-family: 'Consolas', monospace; }
+    .stat .small-unit { font-size: 8px; color: rgba(255,255,255,0.25); }
+
+    /* Trace graph (bottom-right) */
+    .trace-section {
+      position: relative;
+      border-radius: 8px;
+      overflow: hidden;
+      background: rgba(0,0,0,0.3);
+      border: 1px solid rgba(255,255,255,0.04);
+    }
+    .trace-section canvas { width: 100%; height: 100%; display: block; }
+    .trace-legend {
+      position: absolute;
+      top: 4px;
+      right: 6px;
+      display: flex;
+      gap: 8px;
+      font-size: 8px;
+      font-family: 'Consolas', monospace;
+    }
+    .trace-legend .thr { color: #00FF00; }
+    .trace-legend .brk { color: #FF0000; }
+  </style>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+  <div class="hud">
+    <div class="status"><span class="dot" id="dot"></span><span class="text" id="status">--</span></div>
+
+    <!-- Left: Focus Gauge -->
+    <div class="focus-section">
+      <div class="focus-ring">
+        <svg width="100" height="100">
+          <circle class="track" cx="50" cy="50" r="42" stroke-width="6" fill="none"/>
+          <circle class="progress" id="ring" cx="50" cy="50" r="42" stroke-width="6" fill="none"
+            stroke-linecap="round" stroke-dasharray="264" stroke-dashoffset="264" stroke="var(--primary)"/>
+        </svg>
+        <div class="center">
+          <span class="score" id="focus">0</span>
+          <span class="unit">%</span>
+        </div>
+      </div>
+      <span class="focus-label" id="focus-label">Focus</span>
+    </div>
+
+    <!-- Top-right: Stats -->
+    <div class="stats-row">
+      <div class="stat">
+        <span class="label">Speed</span>
+        <span><span class="value" id="speed">0</span><span class="small-unit"> km/h</span></span>
+      </div>
+      <div class="stat">
+        <span class="label">Steer</span>
+        <span class="value" id="steer">0°</span>
+      </div>
+      <div class="stat">
+        <span class="label">Lap</span>
+        <span class="value" id="lap">0:00.000</span>
+      </div>
+    </div>
+
+    <!-- Bottom-right: Telemetry Trace Canvas -->
+    <div class="trace-section">
+      <div class="trace-legend">
+        <span class="thr">— Throttle</span>
+        <span class="brk">— Brake</span>
+      </div>
+      <canvas id="trace"></canvas>
+    </div>
+  </div>
+
+  <script>
+    const API = 'http://localhost:5000'
+    const socket = io(API, { transports: ['websocket'], reconnection: true })
+
+    // ── Connection status ──
+    socket.on('connect', () => { document.getElementById('dot').className = 'dot live'; document.getElementById('status').textContent = 'LIVE' })
+    socket.on('disconnect', () => { document.getElementById('dot').className = 'dot'; document.getElementById('status').textContent = 'OFF' })
+
+    // ── Rolling buffer for trace graph ──
+    const BUFFER_SIZE = 150
+    const thrBuffer = new Array(BUFFER_SIZE).fill(0)
+    const brkBuffer = new Array(BUFFER_SIZE).fill(0)
+    let needsDraw = true
+
+    // ── Canvas setup ──
+    const canvas = document.getElementById('trace')
+    const ctx = canvas.getContext('2d')
+    function resizeCanvas() {
+      const rect = canvas.parentElement.getBoundingClientRect()
+      canvas.width = rect.width * devicePixelRatio
+      canvas.height = rect.height * devicePixelRatio
+      ctx.scale(devicePixelRatio, devicePixelRatio)
+      canvas.style.width = rect.width + 'px'
+      canvas.style.height = rect.height + 'px'
+      needsDraw = true
+    }
+    resizeCanvas()
+    new ResizeObserver(resizeCanvas).observe(canvas.parentElement)
+
+    // ── Draw function ──
+    function drawTrace() {
+      const w = canvas.width / devicePixelRatio
+      const h = canvas.height / devicePixelRatio
+      ctx.clearRect(0, 0, w, h)
+
+      // Gridlines
+      ctx.strokeStyle = 'rgba(255,255,255,0.06)'
+      ctx.lineWidth = 0.5
+      for (const pct of [0.25, 0.5, 0.75]) {
+        const y = h - pct * h
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke()
+      }
+
+      const stepX = w / (BUFFER_SIZE - 1)
+
+      // Draw line
+      function drawLine(buf, color) {
+        ctx.beginPath()
+        ctx.strokeStyle = color
+        ctx.lineWidth = 1.5
+        ctx.lineJoin = 'round'
+        for (let i = 0; i < BUFFER_SIZE; i++) {
+          const x = i * stepX
+          const y = h - (buf[i] / 100) * h
+          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
+        }
+        ctx.stroke()
+      }
+
+      drawLine(thrBuffer, '#00FF00')
+      drawLine(brkBuffer, '#FF0000')
+    }
+
+    // ── Animation loop (only redraws when data arrives) ──
+    function loop() {
+      if (needsDraw) { drawTrace(); needsDraw = false }
+      requestAnimationFrame(loop)
+    }
+    requestAnimationFrame(loop)
+
+    // ── WebSocket telemetry handler ──
+    socket.on('live_telemetry', (d) => {
+      // Stats
+      document.getElementById('speed').textContent = Math.round(d.speed || 0)
+      document.getElementById('steer').textContent = (d.steeringAngle || 0).toFixed(1) + '°'
+      const lt = d.lapTime || 0
+      const m = Math.floor(lt / 60), s = (lt % 60).toFixed(3)
+      document.getElementById('lap').textContent = `${m}:${s.padStart(6, '0')}`
+
+      // Focus ring
+      if (d.focusScore !== undefined) {
+        const score = Math.round(d.focusScore)
+        document.getElementById('focus').textContent = score
+        const ring = document.getElementById('ring')
+        ring.setAttribute('stroke-dashoffset', 264 - (score / 100) * 264)
+        let color = '#04BFAD'
+        if (score < 80) color = '#f5a623'
+        if (score < 50) color = '#e74c3c'
+        ring.style.stroke = color
+        document.getElementById('focus').style.color = color
+        document.getElementById('focus-label').style.color = color
+        document.getElementById('focus-label').textContent = score >= 80 ? 'FOCUSED' : score >= 50 ? 'MODERATE' : 'LOW'
+      }
+
+      // Push to rolling buffer (shift left, append right)
+      thrBuffer.shift()
+      thrBuffer.push(Math.round((d.throttle || 0) * 100))
+      brkBuffer.shift()
+      brkBuffer.push(Math.round((d.brake || 0) * 100))
+      needsDraw = true
+    })
+
+    // ── Theme sync ──
+    async function syncTheme() {
+      try {
+        const r = await fetch(`${API}/api/theme`)
+        if (!r.ok) return
+        const t = await r.json()
+        document.documentElement.style.setProperty('--primary', t.primary)
+        document.querySelector('.hud').style.borderColor = t.primary + '40'
+      } catch(e) {}
+    }
+    syncTheme(); setInterval(syncTheme, 8000)
+  </script>
+</body>
+</html>
