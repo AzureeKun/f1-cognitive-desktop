@@ -44,6 +44,7 @@ function DashboardPage() {
   const handleToggleLive = async () => {
     try {
       if (isLiveOn) {
+        // END session
         if (sessionId) {
           await fetch(`${API_URL}/api/sessions/${sessionId}/end`, {
             method: 'PUT',
@@ -52,9 +53,13 @@ function DashboardPage() {
           })
           setSessionId(null)
         }
-        await fetch(`${API_URL}/api/udp/stop`, { method: 'POST' })
+        // Signal overlay to hide
+        if (socketRef.current) {
+          socketRef.current.emit('control_overlay', { action: 'STOP' })
+        }
         setIsLiveOn(false)
       } else {
+        // START session
         const sessionRes = await fetch(`${API_URL}/api/sessions`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -68,15 +73,14 @@ function DashboardPage() {
         const sessionData = await sessionRes.json()
         if (sessionData.sessionId) {
           setSessionId(sessionData.sessionId)
-          await fetch(`${API_URL}/api/udp/start`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId: sessionData.sessionId }),
-          })
           setIsLiveOn(true)
           lapCountRef.current = 0
           setLapHistory([])
           setTopSpeed(0)
+          // Signal overlay to show
+          if (socketRef.current) {
+            socketRef.current.emit('control_overlay', { action: 'START' })
+          }
         }
       }
     } catch (err) {

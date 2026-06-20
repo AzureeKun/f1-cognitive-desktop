@@ -207,7 +207,7 @@ app.on('window-all-closed', () => {
   app.quit()
 })
 
-// ─── Fetch theme on startup ─────────────────────────────────────────────────
+// ─── Fetch theme on startup + periodic polling ──────────────────────────────
 async function fetchTheme() {
   try {
     const { net } = require('electron')
@@ -225,4 +225,7 @@ async function fetchTheme() {
     request.on('error', () => { /* silent fail */ })
     request.end()
   } catch (e) { /* silent fail on startup */ }
+
+  // Poll theme every 5 seconds
+  setTimeout(fetchTheme, 5000)
 }
