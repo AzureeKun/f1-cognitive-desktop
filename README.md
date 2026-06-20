@@ -1,94 +1,43 @@
-# F1 Cognitive Telemetry — Desktop Application
+# F1 Cognitive Telemetry - Desktop Application
 
-A standalone desktop application that monitors F1 driver cognitive focus in real-time using telemetry data from F1 25.
+One-click desktop application for monitoring F1 driver cognitive focus in real-time using AI and game telemetry.
+
+## Quick Start
+
+1. Download this repository (Code > Download ZIP, or clone it)
+2. Install Python 3.10+ (https://www.python.org/downloads/) - check "Add to PATH"
+3. Install Node.js 18+ (https://nodejs.org/)
+4. Copy your Firebase service account key as `python-backend/serviceAccountKey.json`
+5. Double-click **`Start.bat`**
+
+That's it! The app will:
+- Install Python dependencies (first run only)
+- Start the AI backend server
+- Open the Electron dashboard
+- Overlay works with Ctrl+Shift+F
+
+## Features
+
+- Real-time F1 25 UDP telemetry capture (port 20777)
+- AI-powered cognitive focus prediction (GWO-PSO-ANN model)
+- Transparent game overlay (always-on-top HUD)
+- Session recording with lap-by-lap history
+- Steam authentication
+- Dark F1 racing theme with team color customization
+
+## Keyboard Shortcuts
+
+- `Ctrl+Shift+F` - Toggle overlay visibility
+- `Ctrl+Shift+G` - Toggle overlay click-through
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  ELECTRON APP (.exe)                                         │
-│                                                              │
-│  ┌─────────────────┐     ┌─────────────────────────────┐   │
-│  │  Main Window     │     │  Overlay Window              │   │
-│  │  (React Dashboard│     │  (Transparent HUD)           │   │
-│  │   on localhost)  │     │  (Always-on-top, borderless) │   │
-│  └────────┬─────────┘     └──────────────┬──────────────┘   │
-│           │                               │                  │
-│  ┌────────▼───────────────────────────────▼──────────────┐  │
-│  │  Python Flask Backend (localhost:5000)                  │  │
-│  │  • AI Prediction (ANN Model)                          │  │
-│  │  • UDP Telemetry Listener (port 20777)                │  │
-│  │  • Firebase REST API (session storage)                │  │
-│  │  • WebSocket (Socket.IO)                              │  │
-│  └───────────────────────────────────────────────────────┘  │
-│                              ▲                               │
-│                              │ UDP Port 20777                │
-│  ┌───────────────────────────┴───────────────────────────┐  │
-│  │  F1 25 Game (sends telemetry via UDP)                  │  │
-│  └───────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
-```
+- **Electron** - Desktop shell (main window + overlay)
+- **React** - Dashboard UI (pre-built in frontend-build/)
+- **Flask + Socket.IO** - Backend server with UDP listener
+- **TensorFlow/Keras** - ANN model for cognitive prediction
 
-## Development Setup
+## Note
 
-### Prerequisites
-- Node.js 18+
-- Python 3.11+
-- F1 25 with UDP telemetry enabled (port 20777)
-
-### Install Dependencies
-
-```bash
-# Install Electron dependencies
-npm install
-
-# Build the React frontend
-npm run build-frontend
-```
-
-### Run in Development Mode
-
-```bash
-# Terminal 1: Start the React dev server
-cd ../development/frontend
-npm run dev
-
-# Terminal 2: Start the Python backend
-cd ../development/backend
-py app.py
-
-# Terminal 3: Start Electron
-npm start
-```
-
-### Build Portable .exe
-
-```bash
-npm run build
-```
-
-Output: `dist/F1-Cognitive-Telemetry.exe`
-
-## F1 25 Game Settings
-
-1. Settings → Telemetry
-2. UDP Telemetry: **ON**
-3. UDP Broadcast Mode: **Off**
-4. UDP IP: **127.0.0.1**
-5. UDP Port: **20777**
-6. UDP Send Rate: **60Hz**
-7. Display Mode: **Borderless Windowed** (for overlay to show on top)
-
-## Usage
-
-1. Double-click `F1-Cognitive-Telemetry.exe`
-2. Login with Steam
-3. Click **LIVE ON** to start telemetry capture
-4. Click **OVERLAY** to show the transparent HUD
-5. Start driving in F1 25
-6. Click **LIVE OFF** when done — session saved to Firebase
-
-## Keyboard Shortcuts (Overlay)
-
-- `Ctrl+Shift+F` — Toggle overlay visibility
-- `Ctrl+Shift+G` — Toggle click-through (for repositioning)
+The Firebase service account key is required but not included in the repo for security.
+Copy your key file as `python-backend/serviceAccountKey.json`.
