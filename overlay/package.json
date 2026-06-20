@@ -1,15 +1,50 @@
 {
   "name": "f1-focus-overlay",
   "version": "1.0.0",
-  "description": "Always-on-top transparent overlay for F1 Cognitive Focus Telemetry",
+  "description": "Transparent game overlay for F1 Cognitive Focus Telemetry",
   "main": "main.js",
+  "author": "F1 Cognitive Telemetry",
+  "license": "MIT",
   "scripts": {
-    "start": "electron ."
-  },
-  "devDependencies": {
-    "electron": "^33.2.0"
+    "start": "electron .",
+    "build": "electron-builder --win portable",
+    "build:installer": "electron-builder --win nsis"
   },
   "dependencies": {
     "socket.io-client": "^4.8.3"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.f1cognitive.overlay",
+    "productName": "F1 Focus Overlay",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "overlay.html",
+      "icon.ico"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "icon.ico"
+    },
+    "portable": {
+      "artifactName": "F1-Focus-Overlay.exe"
+    },
+    "nsis": {
+      "oneClick": true,
+      "allowToChangeInstallationDirectory": false,
+      "artifactName": "F1-Focus-Overlay-Setup.exe"
+    }
   }
 }
