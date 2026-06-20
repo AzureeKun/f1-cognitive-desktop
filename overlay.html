@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>F1 Focus HUD</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --primary: #04BFAD;
+      --primary-dim: rgba(4, 191, 173, 0.25);
+    }
+    html, body {
+      background: transparent !important;
+      overflow: hidden;
+      width: 100%;
+      height: 100%;
+    }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ─── Main HUD Container ─── */
+    .hud {
+      background: rgba(8, 8, 12, 0.88);
+      border: 1px solid var(--primary-dim);
+      border-radius: 14px;
+      padding: 12px 14px;
+      width: 100%;
+      height: 100%;
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      grid-template-rows: auto 1fr;
+      gap: 10px;
+      backdrop-filter: blur(8px);
+      position: relative;
+    }
+
+    /* ─── Status Indicator (top-right) ─── */
+    .status {
+      position: absolute;
+      top: 6px;
+      right: 10px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .status .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #565F64;
+      transition: background 0.3s ease;
+    }
+    .status .dot.live {
+      background: var(--primary);
+      animation: pulse 2s infinite;
+    }
+    .status .text {
+      font-size: 7px;
+      color: rgba(255,255,255,0.3);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    /* ─── Focus Gauge (left column, spans both rows) ─── */
+    .focus-section {
+      grid-row: 1 / 3;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .focus-ring {
+      position: relative;
+      width: 100px;
+      height: 100px;
+    }
+    .focus-ring svg {
+      transform: rotate(-90deg);
+    }
+    .focus-ring .track {
+      stroke: rgba(255,255,255,0.06);
+    }
+    .focus-ring .progress {
+      transition: stroke-dashoffset 0.3s ease-out, stroke 0.3s ease;
+    }
+    .focus-ring .center {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .focus-ring .score {
+      font-size: 28px;
+      font-weight: 800;
+      font-family: 'Consolas', 'Courier New', monospace;
+      color: var(--primary);
+      transition: color 0.3s ease;
+    }
+    .focus-ring .unit {
+      font-size: 8px;
+      color: rgba(255,255,255,0.35);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .focus-label {
+      font-size: 8px;
+      color: var(--primary);
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      font-weight: 600;
+      margin-top: 4px;
+      transition: color 0.3s ease;
+    }
+
+    /* ─── Stats Row (top-right) ─── */
+    .stats-row {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      padding: 4px 0;
+    }
+    .stat {
+      display: flex;
+      flex-direction: column;
+    }
+    .stat .label {
+      font-size: 7px;
+      color: rgba(255,255,255,0.3);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 1px;
+    }
+    .stat .value {
+      font-size: 18px;
+      font-weight: 700;
+      color: #fff;
+      font-family: 'Consolas', 'Courier New', monospace;
+      transition: color 0.2s ease;
+    }
+    .stat .small-unit {
+      font-size: 8px;
+      color: rgba(255,255,255,0.25);
+    }
+
+    /* ─── Trace Graph (bottom-right) ─── */
+    .trace-section {
+      position: relative;
+      border-radius: 8px;
+      overflow: hidden;
+      background: rgba(0,0,0,0.3);
+      border: 1px solid rgba(255,255,255,0.04);
+    }
+    .trace-section canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .trace-legend {
+      position: absolute;
+      top: 4px;
+      right: 6px;
+      display: flex;
+      gap: 8px;
+      font-size: 8px;
+      font-family: 'Consolas', monospace;
+    }
+    .trace-legend .thr { color: #00FF00; }
+    .trace-legend .brk { color: #FF0000; }
+  </style>
+</head>
+<body>
+  <div class="hud" id="hud">
+    <!-- Status -->
+    <div class="status">
+      <span class="dot" id="dot"></span>
+      <span class="text" id="status-text">--</span>
+    </div>
+
+    <!-- Left: Focus Gauge -->
+    <div class="focus-section">
+      <div class="focus-ring">
+        <svg width="100" height="100" viewBox="0 0 100 100">
+          <circle class="track" cx="50" cy="50" r="42" stroke-width="6" fill="none"/>
+          <circle class="progress" id="ring" cx="50" cy="50" r="42" stroke-width="6" fill="none"
+            stroke-linecap="round" stroke-dasharray="264" stroke-dashoffset="264" stroke="var(--primary)"/>
+        </svg>
+        <div class="center">
+          <span class="score" id="focus-score">0</span>
+          <span class="unit">%</span>
+        </div>
+      </div>
+      <span class="focus-label" id="focus-label">Focus</span>
+    </div>
+
+    <!-- Top-right: Stats -->
+    <div class="stats-row">
+      <div class="stat">
+        <span class="label">Speed</span>
+        <span><span class="value" id="speed">0</span><span class="small-unit"> km/h</span></span>
+      </div>
+      <div class="stat">
+        <span class="label">Steer</span>
+        <span class="value" id="steer">0°</span>
+      </div>
+      <div class="stat">
+        <span class="label">Lap</span>
+        <span class="value" id="lap">0:00.000</span>
+      </div>
+    </div>
+
+    <!-- Bottom-right: Telemetry Trace -->
+    <div class="trace-section">
+      <div class="trace-legend">
+        <span class="thr">— Throttle</span>
+        <span class="brk">— Brake</span>
+      </div>
+      <canvas id="trace"></canvas>
+    </div>
+  </div>
+
+  <script>
+    // ═══════════════════════════════════════════════════════════════════════════
+    // F1 Focus HUD — Desktop Version
+    // Connects directly to localhost:5000 via Socket.IO
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    const dot = document.getElementById('dot')
+    const statusText = document.getElementById('status-text')
+    const focusScore = document.getElementById('focus-score')
+    const focusLabel = document.getElementById('focus-label')
+    const ring = document.getElementById('ring')
+    const speedEl = document.getElementById('speed')
+    const steerEl = document.getElementById('steer')
+    const lapEl = document.getElementById('lap')
+    const canvas = document.getElementById('trace')
+    const ctx = canvas.getContext('2d')
+
+    const BUFFER_SIZE = 150
+    const thrBuffer = new Float32Array(BUFFER_SIZE)
+    const brkBuffer = new Float32Array(BUFFER_SIZE)
+    let needsDraw = true
+
+    function resizeCanvas() {
+      const rect = canvas.parentElement.getBoundingClientRect()
+      const dpr = window.devicePixelRatio || 1
+      canvas.width = rect.width * dpr
+      canvas.height = rect.height * dpr
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      canvas.style.width = rect.width + 'px'
+      canvas.style.height = rect.height + 'px'
+      needsDraw = true
+    }
+    resizeCanvas()
+    new ResizeObserver(resizeCanvas).observe(canvas.parentElement)
+
+    function drawTrace() {
+      const w = canvas.width / (window.devicePixelRatio || 1)
+      const h = canvas.height / (window.devicePixelRatio || 1)
+      ctx.clearRect(0, 0, w, h)
+      ctx.strokeStyle = 'rgba(255,255,255,0.05)'
+      ctx.lineWidth = 0.5
+      for (const pct of [0.25, 0.5, 0.75]) {
+        const y = h - pct * h
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke()
+      }
+      const stepX = w / (BUFFER_SIZE - 1)
+      function drawLine(buf, color) {
+        ctx.beginPath(); ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.lineJoin = 'round'
+        for (let i = 0; i < BUFFER_SIZE; i++) {
+          const x = i * stepX, y = h - (buf[i] / 100) * h
+          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
+        }
+        ctx.stroke()
+      }
+      drawLine(thrBuffer, '#00FF00')
+      drawLine(brkBuffer, '#FF0000')
+    }
+
+    function loop() { if (needsDraw) { drawTrace(); needsDraw = false }; requestAnimationFrame(loop) }
+    requestAnimationFrame(loop)
+
+    function pushBuffer(buf, value) { buf.copyWithin(0, 1); buf[BUFFER_SIZE - 1] = value }
+
+    // Load Socket.IO from CDN (injected by Electron loadURL)
+    const script = document.createElement('script')
+    script.src = 'https://cdn.socket.io/4.7.5/socket.io.min.js'
+    script.onload = () => {
+      const socket = io('http://localhost:5000', {
+        transports: ['websocket', 'polling'],
+        reconnection: true,
+      })
+
+      socket.on('connect', () => {
+        dot.className = 'dot live'
+        statusText.textContent = 'LIVE'
+      })
+
+      socket.on('disconnect', () => {
+        dot.className = 'dot'
+        statusText.textContent = 'OFF'
+      })
+
+      socket.on('live_telemetry', (d) => {
+        speedEl.textContent = Math.round(d.speed || 0)
+        const steerVal = d.steeringAngle || 0
+        steerEl.textContent = steerVal.toFixed(1) + '\u00B0'
+        const lt = d.lapTime || 0
+        const m = Math.floor(lt / 60)
+        const s = (lt % 60).toFixed(3)
+        lapEl.textContent = `${m}:${s.padStart(6, '0')}`
+
+        if (d.focusScore !== undefined) {
+          const score = Math.round(d.focusScore)
+          focusScore.textContent = score
+          ring.setAttribute('stroke-dashoffset', 264 - (score / 100) * 264)
+          let color = 'var(--primary)'
+          let label = 'FOCUSED'
+          if (score < 80) { color = '#f5a623'; label = 'MODERATE' }
+          if (score < 50) { color = '#e74c3c'; label = 'LOW' }
+          ring.style.stroke = color
+          focusScore.style.color = color
+          focusLabel.style.color = color
+          focusLabel.textContent = label
+        }
+
+        pushBuffer(thrBuffer, Math.round((d.throttle || 0) * 100))
+        pushBuffer(brkBuffer, Math.round((d.brake || 0) * 100))
+        needsDraw = true
+      })
+
+      // Theme sync
+      async function syncTheme() {
+        try {
+          const r = await fetch('http://localhost:5000/api/theme')
+          if (!r.ok) return
+          const t = await r.json()
+          if (t.primary) {
+            document.documentElement.style.setProperty('--primary', t.primary)
+            document.documentElement.style.setProperty('--primary-dim', t.primary + '40')
+          }
+        } catch(e) {}
+        setTimeout(syncTheme, 5000)
+      }
+      syncTheme()
+    }
+    document.head.appendChild(script)
+  </script>
+</body>
+</html>

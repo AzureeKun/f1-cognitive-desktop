@@ -1,0 +1,57 @@
+{
+  "name": "f1-cognitive-telemetry",
+  "version": "1.0.0",
+  "description": "F1 Cognitive Focus Telemetry - Desktop Application",
+  "main": "main.js",
+  "author": "Azrai Aizam Bin Ahmad Yazi",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build-frontend": "cd ../development/frontend && npm run build && xcopy /E /I /Y dist ..\\..\\f1-cognitive-desktop\\frontend-build",
+    "build": "electron-builder --win",
+    "pack": "electron-builder --dir"
+  },
+  "dependencies": {
+    "electron-is-dev": "^2.0.0",
+    "socket.io-client": "^4.8.3"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.f1cognitive.desktop",
+    "productName": "F1 Cognitive Telemetry",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "overlay.html",
+      "frontend-build/**/*",
+      "python-backend/**/*",
+      "!python-backend/__pycache__/**",
+      "!python-backend/.env"
+    ],
+    "extraResources": [
+      {
+        "from": "python-backend",
+        "to": "python-backend",
+        "filter": ["**/*", "!__pycache__/**", "!.env"]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "icon.ico"
+    },
+    "portable": {
+      "artifactName": "F1-Cognitive-Telemetry.exe"
+    }
+  }
+}
