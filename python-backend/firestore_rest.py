@@ -128,6 +128,23 @@ def update_document(collection, doc_id, data):
     return set_document(collection, doc_id, data, merge=True)
 
 
+def delete_document(collection, doc_id):
+    """Delete a document."""
+    if not BASE_URL:
+        return False
+    headers = _get_headers()
+    if not headers:
+        return False
+
+    url = f"{BASE_URL}/{collection}/{doc_id}"
+    resp = requests.delete(url, headers=headers, verify=False, timeout=10)
+    if resp.status_code in (200, 204):
+        return True
+
+    print(f"[FIRESTORE-REST] Delete failed ({resp.status_code}): {resp.text[:200]}")
+    return False
+
+
 def set_subcollection_doc(collection, doc_id, subcollection, sub_doc_id, data):
     """Write to a subcollection: collection/doc_id/subcollection/sub_doc_id"""
     if not BASE_URL:

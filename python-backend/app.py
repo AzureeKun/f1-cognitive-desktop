@@ -444,6 +444,45 @@ import threading
 _udp_thread = None
 _udp_running = False
 _udp_session_id = None
+_udp_ready = threading.Event()
+
+
+def _start_udp_listener(session_id='local'):
+    """Start the native UDP listener thread. Returns (ok, message)."""
+    global _udp_thread, _udp_running, _udp_session_id
+
+    if _udp_running:
+        _udp_session_id = session_id
+        return True, 'already_running'
+
+    _udp_session_id = session_id
+    _udp_running = True
+    _udp_ready.clear()
+
+    _udp_thread = threading.Thread(target=_udp_listener_loop, daemon=True)
+    _udp_thread.start()
+
+    if not _udp_ready.wait(timeout=2.0):
+        _udp_running = False
+        if _udp_thread:
+            _udp_thread.join(timeout=1)
+            _udp_thread = None
+        return False, 'Failed to bind UDP port 20777. Enable F1 25 UDP telemetry and close other apps using this port.'
+
+    return True, 'started'
+
+
+def _stop_udp_listener():
+    """Stop the native UDP listener thread."""
+    global _udp_running, _udp_thread
+
+    if not _udp_running:
+        return
+
+    _udp_running = False
+    if _udp_thread:
+        _udp_thread.join(timeout=1)
+        _udp_thread = None
 
 
 def _udp_listener_loop():
@@ -466,6 +505,7 @@ def _udp_listener_loop():
 
     sock.settimeout(0.1)
 
+    _udp_ready.set()
     socketio.emit('udp_status', {'status': 'connected'})
     print(f"[UDP] Listening on port 20777 (session: {_udp_session_id})")
 
@@ -707,34 +747,20 @@ def _udp_listener_loop():
 @app.route('/api/udp/start', methods=['POST'])
 def start_udp_listener():
     """Start the UDP listener thread instantly."""
-    global _udp_thread, _udp_running, _udp_session_id
-
-    if _udp_running:
-        return jsonify({'status': 'already_running'})
-
     data = request.get_json() or {}
-    _udp_session_id = data.get('sessionId', 'local')
-    _udp_running = True
+    session_id = data.get('sessionId', 'local')
 
-    _udp_thread = threading.Thread(target=_udp_listener_loop, daemon=True)
-    _udp_thread.start()
+    ok, message = _start_udp_listener(session_id)
+    if not ok:
+        return jsonify({'status': 'error', 'message': message}), 500
 
-    return jsonify({'status': 'started', 'sessionId': _udp_session_id})
+    return jsonify({'status': message, 'sessionId': session_id})
 
 
 @app.route('/api/udp/stop', methods=['POST'])
 def stop_udp_listener():
     """Stop the UDP listener thread instantly."""
-    global _udp_running, _udp_thread
-
-    if not _udp_running:
-        return jsonify({'status': 'not_running'})
-
-    _udp_running = False
-    if _udp_thread:
-        _udp_thread.join(timeout=1)  # Wait max 100ms + socket timeout
-        _udp_thread = None
-
+    _stop_udp_listener()
     return jsonify({'status': 'stopped'})
 
 
@@ -857,14 +883,21 @@ def handle_control_overlay(data):
 @socketio.on('toggle_telemetry')
 def handle_toggle_telemetry(data):
     """
-    Relay telemetry start/stop command from dashboard to the local Python forwarder.
-    Dashboard emits: { status: 'START', sessionId: '...' } or { status: 'STOP' }
-    Forwarder listens for: 'forwarder_command'
+    Relay telemetry start/stop command from dashboard.
+    In desktop mode this also starts/stops the native UDP listener.
     """
     status = data.get('status', '')
     session_id = data.get('sessionId', '')
     print(f"[EVENT] Received toggle_telemetry: status={status}, sessionId={session_id}")
-    # Broadcast to ALL clients — the local forwarder will pick this up
+
+    if status == 'START':
+        ok, message = _start_udp_listener(session_id or 'local')
+        if not ok:
+            socketio.emit('udp_status', {'status': 'error', 'message': message})
+    elif status == 'STOP':
+        _stop_udp_listener()
+
+    # Backward compatibility for external telemetry_live.py forwarder
     socketio.emit('forwarder_command', data)
     print(f"[EVENT] Broadcasted forwarder_command to all clients")
 
@@ -906,6 +939,7 @@ def handle_telemetry(data):
         if focus_score > 0 and result.get('method') != 'rule-stopped':
             stats['focus_scores'].append(focus_score)
         stats['data_points'] += 1
+        lap_num = data.get('lapNum', 0)
         if lap_num > stats['max_lap']:
             stats['max_lap'] = lap_num
         # Track fastest lap (detect lap completion via lapTime reset)

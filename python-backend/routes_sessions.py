@@ -87,8 +87,6 @@ def create_session():
         print(f"[SESSION] OK - {session_id} saved to Firestore")
     except Exception as e:
         print(f"[SESSION] Firestore save failed: {e}")
-    else:
-        print(f"[SESSION] Session {session_id} created (no Firebase)")
 
     return jsonify({
         'message': 'Session started',
@@ -159,6 +157,27 @@ def get_session_detail(session_id):
     return jsonify({'error': 'Session not found'}), 404
 
 
+@sessions_bp.route('/api/sessions/<session_id>/cancel', methods=['DELETE'])
+def cancel_session(session_id):
+    """
+    Cancel an active session that never received telemetry.
+    Removes it from memory and Firestore so empty records do not appear.
+    """
+    active_session_stats.pop(session_id, None)
+    _sessions_store.pop(session_id, None)
+
+    try:
+        from firestore_rest import delete_document
+        import urllib3
+        urllib3.disable_warnings()
+        delete_document('sessions', session_id)
+        print(f"[SESSION] Cancelled empty session {session_id}")
+    except Exception as e:
+        print(f"[SESSION] Firestore cancel failed: {e}")
+
+    return jsonify({'message': 'Session cancelled', 'sessionId': session_id})
+
+
 @sessions_bp.route('/api/sessions/<session_id>/end', methods=['PUT'])
 def end_session(session_id):
     """
@@ -173,6 +192,24 @@ def end_session(session_id):
     avg_focus = sum(focus_scores) / len(focus_scores) if focus_scores else 0
     total_laps = max(data.get('totalLaps', 0), stats['max_lap'])
     fastest_lap = stats.get('fastest_lap')
+
+    # Drop sessions that never received telemetry (prevents empty records)
+    if stats['data_points'] == 0 and total_laps == 0:
+        _sessions_store.pop(session_id, None)
+        try:
+            from firestore_rest import delete_document
+            import urllib3
+            urllib3.disable_warnings()
+            delete_document('sessions', session_id)
+            print(f"[SESSION] Discarded empty session {session_id}")
+        except Exception as e:
+            print(f"[SESSION] Firestore delete failed: {e}")
+
+        return jsonify({
+            'message': 'Empty session discarded (no telemetry received)',
+            'sessionId': session_id,
+            'discarded': True,
+        })
 
     # Determine focus level
     if avg_focus >= 80:
