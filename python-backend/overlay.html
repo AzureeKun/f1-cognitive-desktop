@@ -289,13 +289,26 @@
 
     function pushBuffer(buf, value) { buf.copyWithin(0, 1); buf[BUFFER_SIZE - 1] = value }
 
-    // Load Socket.IO from CDN (injected by Electron loadURL)
+    // Load Socket.IO from the local Flask backend (no CDN needed)
+    // Flask-SocketIO serves socket.io.js at /socket.io/socket.io.js
     const script = document.createElement('script')
-    script.src = 'https://cdn.socket.io/4.7.5/socket.io.min.js'
-    script.onload = () => {
+    script.src = '/socket.io/socket.io.js'
+    script.onerror = () => {
+      // Fallback: try CDN if local fails
+      const fallback = document.createElement('script')
+      fallback.src = 'https://cdn.socket.io/4.7.5/socket.io.min.js'
+      fallback.onload = initSocket
+      document.head.appendChild(fallback)
+    }
+    script.onload = initSocket
+    document.head.appendChild(script)
+
+    function initSocket() {
       const socket = io('http://localhost:5050', {
         transports: ['websocket', 'polling'],
         reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionAttempts: Infinity,
       })
 
       socket.on('connect', () => {
@@ -351,7 +364,6 @@
       }
       syncTheme()
     }
-    document.head.appendChild(script)
   </script>
 </body>
 </html>

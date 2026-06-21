@@ -544,6 +544,14 @@ def _udp_listener_loop():
         packet_id = header[5]
         player_car_index = header[10]
 
+        # Debug: log every unique packet type received
+        if not hasattr(_udp_listener_loop, '_seen_packets'):
+            _udp_listener_loop._seen_packets = set()
+        packet_key = (packet_id, len(data))
+        if packet_key not in _udp_listener_loop._seen_packets:
+            _udp_listener_loop._seen_packets.add(packet_key)
+            print(f"[UDP] New packet type: ID={packet_id}, size={len(data)} bytes, player_idx={player_car_index}")
+
         # ═══════════════════════════════════════════════════════
         # A. CAR TELEMETRY (Packet ID 6)
         #    ALWAYS emit to frontend — dashboard never goes dead
@@ -611,14 +619,18 @@ def _udp_listener_loop():
         #    State machine: detect flying start, then track laps
         # ═══════════════════════════════════════════════════════
         elif packet_id == PACKET_LAP_DATA:
-            start_byte = 29 + (player_car_index * 61)
-            if start_byte + 40 > len(data):
+            # F1 25: PacketLapData = 1285 bytes
+            # Header=29 + LapData[22] + 2 = 1285 → LapData = 57 bytes/car
+            start_byte = 29 + (player_car_index * 57)
+            if start_byte + 24 > len(data):
                 continue
 
             curr_lap_time_ms = struct.unpack('<I', data[start_byte+4:start_byte+8])[0]
             curr_lap_time = curr_lap_time_ms / 1000.0
 
-            raw_dist = struct.unpack('<f', data[start_byte+36:start_byte+40])[0]
+            # F1 25: m_lapDistance offset = 20 bytes into LapData
+            # uint32+uint32+uint16+uint8+uint16+uint8+uint16+uint8+uint16+uint8 = 20
+            raw_dist = struct.unpack('<f', data[start_byte+20:start_byte+24])[0]
             curr_lap_distance = raw_dist if 0 <= raw_dist <= 10000 else prev_lap_distance
 
             # Update current state for telemetry emission
