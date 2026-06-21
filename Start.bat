@@ -45,7 +45,8 @@ if not exist "%~dp0python-backend\.deps_installed" (
 :: Install Node modules if needed (first run)
 if not exist "%~dp0node_modules" (
     echo [*] First run: Installing Node.js dependencies...
-    npm install --prefix "%~dp0" --quiet
+    cd /d "%~dp0"
+    npm install
     if errorlevel 1 (
         echo [ERROR] Failed to install Node.js dependencies!
         pause
