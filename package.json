@@ -1,6 +1,6 @@
 {
   "name": "f1-cognitive-telemetry",
-  "version": "1.0.0",
+  "version": "3.1.0",
   "description": "F1 Cognitive Focus Telemetry - Desktop Application",
   "main": "main.js",
   "author": "Azrai Aizam Bin Ahmad Yazi",
@@ -29,8 +29,6 @@
       "main.js",
       "preload.js",
       "overlay.html",
-      "frontend-build/**/*",
-      "python-backend/**/*",
       "!python-backend/__pycache__/**",
       "!python-backend/.env"
     ],
@@ -38,7 +36,12 @@
       {
         "from": "python-backend",
         "to": "python-backend",
-        "filter": ["**/*", "!__pycache__/**", "!.env"]
+        "filter": ["**/*", "!__pycache__/**", "!ai_model/model_kognitif_rf.pkl", "!ai_model/model_kognitif_svm.pkl"]
+      },
+      {
+        "from": "frontend_build",
+        "to": "frontend_build",
+        "filter": ["**/*"]
       }
     ],
     "win": {

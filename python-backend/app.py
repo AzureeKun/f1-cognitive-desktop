@@ -53,8 +53,33 @@ from shared_state import global_live_buffer, global_latest_prediction, live_tele
 # Load .env from same directory
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 
-app = Flask(__name__)
+app = Flask(
+    __name__,
+    static_folder=os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), '..', 'frontend_build'
+    ),
+    static_url_path=''
+)
 app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
+
+# Resolve frontend build directory
+BACKEND_DIR_PATH = os.path.dirname(os.path.abspath(__file__))
+FRONTEND_BUILD_DIR = None
+for candidate in [
+    os.path.join(BACKEND_DIR_PATH, '..', 'frontend_build'),
+    os.path.join(BACKEND_DIR_PATH, 'frontend_build'),
+    os.path.join(BACKEND_DIR_PATH, '..', 'frontend-build'),
+]:
+    resolved = os.path.abspath(candidate)
+    if os.path.isfile(os.path.join(resolved, 'index.html')):
+        FRONTEND_BUILD_DIR = resolved
+        app.static_folder = resolved
+        break
+
+if FRONTEND_BUILD_DIR:
+    print(f"[FRONTEND] Serving from: {FRONTEND_BUILD_DIR}")
+else:
+    print("[FRONTEND] WARNING: No frontend_build found - API only mode")
 
 # CORS - allow frontend origins (local + production)
 CORS(app, supports_credentials=True, resources={r"/api/*": {"origins": "*"}}, origins=[
@@ -102,8 +127,8 @@ def steam_login():
     params = {
         'openid.ns': 'http://specs.openid.net/auth/2.0',
         'openid.mode': 'checkid_setup',
-        'openid.return_to': 'https://f1-cognitive-telemetry.onrender.com/api/auth/steam/callback',
-        'openid.realm': 'https://f1-cognitive-telemetry.onrender.com',
+        'openid.return_to': f'{BACKEND_URL}/api/auth/steam/callback',
+        'openid.realm': BACKEND_URL,
         'openid.identity': 'http://specs.openid.net/auth/2.0/identifier_select',
         'openid.claimed_id': 'http://specs.openid.net/auth/2.0/identifier_select',
     }
@@ -391,10 +416,20 @@ def get_steam_user_profile(steam_id):
 def serve_overlay():
     """Serve the overlay HTML page for Electron (same origin = no CORS)."""
     import os
-    overlay_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        'overlay', 'overlay.html'
-    )
+    # Look for overlay.html in multiple locations
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    possible_paths = [
+        os.path.join(base_dir, 'overlay.html'),  # Same dir as app.py
+        os.path.join(os.path.dirname(base_dir), 'overlay', 'overlay.html'),  # ../overlay/
+        os.path.join(os.path.dirname(base_dir), 'overlay.html'),  # One level up
+    ]
+    overlay_path = None
+    for p in possible_paths:
+        if os.path.exists(p):
+            overlay_path = p
+            break
+    if not overlay_path:
+        return f"<html><body style='background:#1a1a2e;color:#fff;font-family:monospace;padding:20px'><h2>Overlay not found</h2><p>Searched: {possible_paths}</p></body></html>", 404, {'Content-Type': 'text/html'}
     with open(overlay_path, 'r', encoding='utf-8') as f:
         return f.read(), 200, {'Content-Type': 'text/html'}
 
@@ -901,6 +936,23 @@ def handle_lap_completed(data):
 
 
 # ============================================================
+# SERVE REACT FRONTEND (catch-all for client-side routing)
+# Flask's static_folder handles /assets/*, /favicon.jpg, etc.
+# We just need a catch-all for React Router's client-side routes.
+# ============================================================
+@app.route('/')
+def serve_index():
+    return app.send_static_file('index.html')
+
+@app.errorhandler(404)
+def fallback_to_react(e):
+    """Any unknown route goes to index.html for React Router to handle."""
+    if request.path.startswith('/api/') or request.path.startswith('/socket.io'):
+        return jsonify({'error': 'Not found'}), 404
+    return app.send_static_file('index.html')
+
+
+# ============================================================
 # RUN
 # ============================================================
 
@@ -936,4 +988,4 @@ if __name__ == '__main__':
     print("    POST /api/sessions/<id>/focus")
     print("=" * 55)
 
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True, use_reloader=False, allow_unsafe_werkzeug=True)
+    socketio.run(app, host='0.0.0.0', port=5000, debug=False, use_reloader=False, allow_unsafe_werkzeug=True)

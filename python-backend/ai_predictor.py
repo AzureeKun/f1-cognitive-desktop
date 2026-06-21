@@ -32,10 +32,10 @@ import numpy as np
 import joblib
 from collections import deque
 
-# Paths to model files
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-MODEL_PATH = os.path.join(BASE_DIR, 'ai_model', 'model_kognitif_gwo_pso_ann.h5')
-SCALER_PATH = os.path.join(BASE_DIR, 'ai_model', 'scaler_telemetri.pkl')
+# Paths to model files (relative to this script's directory)
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_PATH = os.path.join(SCRIPT_DIR, 'ai_model', 'model_kognitif_gwo_pso_ann.h5')
+SCALER_PATH = os.path.join(SCRIPT_DIR, 'ai_model', 'scaler_telemetri.pkl')
 
 # Global model and scaler instances
 _model = None
