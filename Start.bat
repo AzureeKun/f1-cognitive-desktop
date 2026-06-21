@@ -6,14 +6,18 @@ echo   Starting application...
 echo ========================================
 echo.
 
-:: Check if Python is available
-python --version >nul 2>&1
+:: Check if Python is available (try both 'py' and 'python')
+set PYTHON_CMD=py
+py --version >nul 2>&1
 if errorlevel 1 (
-    echo [ERROR] Python is not installed or not in PATH!
-    echo Please install Python 3.10+ from https://www.python.org/downloads/
-    echo Make sure to check "Add Python to PATH" during installation.
-    pause
-    exit /b 1
+    set PYTHON_CMD=python
+    python --version >nul 2>&1
+    if errorlevel 1 (
+        echo [ERROR] Python is not installed or not in PATH!
+        echo Please install Python 3.10+ from https://www.python.org/downloads/
+        pause
+        exit /b 1
+    )
 )
 
 :: Check if Node.js is available
@@ -28,7 +32,7 @@ if errorlevel 1 (
 :: Install Python dependencies if needed (first run)
 if not exist "%~dp0python-backend\.deps_installed" (
     echo [*] First run: Installing Python dependencies...
-    pip install -r "%~dp0python-backend\requirements.txt" --quiet
+    %PYTHON_CMD% -m pip install -r "%~dp0python-backend\requirements.txt" --quiet
     if errorlevel 1 (
         echo [ERROR] Failed to install Python dependencies!
         pause
@@ -52,7 +56,7 @@ if not exist "%~dp0node_modules" (
 
 :: Start Python backend in background
 echo [*] Starting AI backend...
-start /B python "%~dp0python-backend\app.py"
+start /B %PYTHON_CMD% "%~dp0python-backend\app.py"
 
 :: Wait for backend to be ready
 :wait_loop

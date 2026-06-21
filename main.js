@@ -45,8 +45,8 @@ function startPythonBackend() {
 
   console.log(`[BACKEND] Starting Flask from: ${backendPath}`)
 
-  // Find Python executable
-  const pythonCmd = process.platform === 'win32' ? 'python' : 'python3'
+  // Find Python executable (Windows: try 'py' first, then 'python')
+  const pythonCmd = process.platform === 'win32' ? 'py' : 'python3'
 
   pythonProcess = spawn(pythonCmd, [appPy], {
     cwd: backendPath,
