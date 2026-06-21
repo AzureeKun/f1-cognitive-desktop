@@ -256,13 +256,35 @@ ipcMain.handle('show-overlay', () => {
   if (overlayWindow) {
     overlayWindow.show()
     overlayWindow.setAlwaysOnTop(true, 'screen-saver', 1)
+    return true
   }
+  return false
 })
 
 ipcMain.handle('hide-overlay', () => {
   if (overlayWindow) {
     overlayWindow.hide()
+    return true
   }
+  return false
+})
+
+ipcMain.handle('toggle-overlay', () => {
+  if (overlayWindow) {
+    if (overlayWindow.isVisible()) {
+      overlayWindow.hide()
+      return false  // now hidden
+    } else {
+      overlayWindow.show()
+      overlayWindow.setAlwaysOnTop(true, 'screen-saver', 1)
+      return true   // now visible
+    }
+  }
+  return false
+})
+
+ipcMain.handle('overlay-visible', () => {
+  return overlayWindow ? overlayWindow.isVisible() : false
 })
 
 ipcMain.handle('get-backend-url', () => {
