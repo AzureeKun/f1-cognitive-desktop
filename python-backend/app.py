@@ -1,5 +1,5 @@
 """
-F1 Cognitive Focus Telemetry - Backend API (Full Integration)
+F1 Cognitive Focus Telemetry - Backend API (Desktop Version)
 
 Components:
 - Flask web framework
@@ -7,14 +7,10 @@ Components:
 - Steam OpenID 2.0 authentication
 - ANN Model (model_kognitif_ann.h5) for focus prediction
 - REST API for telemetry, sessions, and real-time predictions
-"""
 
-# ============================================================
-# EVENTLET MONKEY PATCH — MUST be the absolute first thing
-# Fixes: "maximum recursion depth exceeded" with eventlet + ssl/requests
-# ============================================================
-import eventlet
-eventlet.monkey_patch()
+NOTE: Desktop version uses async_mode='threading' (NO eventlet).
+      This allows native UDP socket threads to work correctly.
+"""
 
 # ============================================================
 # SSL & Environment Setup
@@ -90,13 +86,13 @@ CORS(app, supports_credentials=True, resources={r"/api/*": {"origins": "*"}}, or
 ])
 
 # SocketIO - real-time WebSocket communication
-# Uses 'eventlet' async mode for production (Render + gunicorn eventlet worker)
+# Desktop version uses 'threading' mode (no eventlet) so native UDP threads work
 socketio = SocketIO(
     app,
     cors_allowed_origins="*",
-    async_mode='eventlet',
-    logger=True,
-    engineio_logger=True,
+    async_mode='threading',
+    logger=False,
+    engineio_logger=False,
 )
 
 # Register routes
@@ -462,12 +458,15 @@ def _start_udp_listener(session_id='local'):
     _udp_thread = threading.Thread(target=_udp_listener_loop, daemon=True)
     _udp_thread.start()
 
-    if not _udp_ready.wait(timeout=2.0):
-        _udp_running = False
+    # Wait for the thread to signal it bound successfully (or failed)
+    _udp_ready.wait(timeout=3.0)
+
+    if not _udp_running:
+        # Thread set _udp_running = False → bind failed
         if _udp_thread:
             _udp_thread.join(timeout=1)
             _udp_thread = None
-        return False, 'Failed to bind UDP port 20777. Enable F1 25 UDP telemetry and close other apps using this port.'
+        return False, 'Failed to bind UDP port 20777. Make sure F1 25 UDP is enabled and no other app is using this port.'
 
     return True, 'started'
 
@@ -493,21 +492,24 @@ def _udp_listener_loop():
     global _udp_running, _udp_session_id
 
     # Bind UDP socket with reuse flag for fast toggle
+    # Bind to 0.0.0.0 so F1 25 can reach us from any interface (not just loopback)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
-        sock.bind(('127.0.0.1', 20777))
+        sock.bind(('0.0.0.0', 20777))
     except OSError as e:
         print(f"[UDP] FAILED to bind port 20777: {e}")
         socketio.emit('udp_status', {'status': 'error', 'message': str(e)})
         _udp_running = False
+        _udp_ready.set()  # Unblock the wait even on failure
         return
 
-    sock.settimeout(0.1)
+    sock.settimeout(0.5)  # 500ms timeout — responsive to stop signals
 
     _udp_ready.set()
     socketio.emit('udp_status', {'status': 'connected'})
-    print(f"[UDP] Listening on port 20777 (session: {_udp_session_id})")
+    print(f"[UDP] ✓ Listening on 0.0.0.0:20777 (session: {_udp_session_id})")
+    print(f"[UDP]   Waiting for F1 25 data... (make sure UDP is ON in game settings)")
 
     # ── STATE MACHINE VARIABLES ──
     is_flying_start_crossed = False
@@ -518,17 +520,22 @@ def _udp_listener_loop():
     current_lap_dist = 0.0
     current_lap_focus_scores = []
     emit_counter = 0
+    first_packet_received = False
 
     PACKET_LAP_DATA = 2
     PACKET_CAR_TELEMETRY = 6
 
     while _udp_running:
         try:
-            data, _ = sock.recvfrom(2048)
+            data, addr = sock.recvfrom(2048)
         except socket.timeout:
             continue
         except OSError:
             break
+
+        if not first_packet_received:
+            first_packet_received = True
+            print(f"[UDP] ✓ First packet received from {addr} ({len(data)} bytes)")
 
         if len(data) < 29:
             continue
@@ -1022,4 +1029,4 @@ if __name__ == '__main__':
     print("    POST /api/sessions/<id>/focus")
     print("=" * 55)
 
-    socketio.run(app, host='0.0.0.0', port=5000, debug=False, use_reloader=False, allow_unsafe_werkzeug=True)
+    socketio.run(app, host='0.0.0.0', port=5000, debug=False, use_reloader=False, allow_unsafe_werkzeug=True, log_output=True)
