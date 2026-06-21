@@ -14,7 +14,7 @@ const { spawn, execSync } = require('child_process')
 const fs = require('fs')
 
 // ─── Configuration ───────────────────────────────────────────────────────────
-const BACKEND_PORT = 5000
+const BACKEND_PORT = 5050
 const BACKEND_URL = `http://localhost:${BACKEND_PORT}`
 const isDev = !app.isPackaged
 

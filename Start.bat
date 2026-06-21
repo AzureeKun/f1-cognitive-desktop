@@ -62,7 +62,7 @@ start /B %PYTHON_CMD% "%~dp0python-backend\app.py"
 :: Wait for backend to be ready
 :wait_loop
 timeout /t 1 /nobreak >nul
-curl -s http://localhost:5000/api/health >nul 2>&1
+curl -s http://localhost:5050/api/health >nul 2>&1
 if errorlevel 1 goto wait_loop
 echo [OK] Backend ready!
 

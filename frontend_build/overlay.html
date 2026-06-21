@@ -293,7 +293,7 @@
     const script = document.createElement('script')
     script.src = 'https://cdn.socket.io/4.7.5/socket.io.min.js'
     script.onload = () => {
-      const socket = io('http://localhost:5000', {
+      const socket = io('http://localhost:5050', {
         transports: ['websocket', 'polling'],
         reconnection: true,
       })
@@ -339,7 +339,7 @@
       // Theme sync
       async function syncTheme() {
         try {
-          const r = await fetch('http://localhost:5000/api/theme')
+          const r = await fetch('http://localhost:5050/api/theme')
           if (!r.ok) return
           const t = await r.json()
           if (t.primary) {
