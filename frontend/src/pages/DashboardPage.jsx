@@ -11,7 +11,7 @@ import PedalInput from '../components/PedalInput'
 import TelemetryTrace from '../components/TelemetryTrace'
 import StatsFooter from '../components/StatsFooter'
 
-const API_URL = import.meta.env.VITE_API_URL || API_URL
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
 
 function DashboardPage() {
   const { user, theme } = useApp()
@@ -40,11 +40,41 @@ function DashboardPage() {
   const lastLapRecordedRef = useRef(0)
   const socketRef = useRef(null)
 
+  const stopUdpListener = async () => {
+    try {
+      await fetch(`${API_URL}/api/udp/stop`, { method: 'POST' })
+    } catch (err) {
+      console.error('Failed to stop UDP listener:', err)
+    }
+  }
+
+  const startUdpListener = async (activeSessionId) => {
+    const res = await fetch(`${API_URL}/api/udp/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: activeSessionId }),
+    })
+    const data = await res.json()
+    if (!res.ok || data.status === 'error') {
+      throw new Error(data.message || 'Failed to start UDP listener on port 20777')
+    }
+    return data
+  }
+
+  const cancelEmptySession = async (activeSessionId) => {
+    try {
+      await fetch(`${API_URL}/api/sessions/${activeSessionId}/cancel`, { method: 'DELETE' })
+    } catch (err) {
+      console.error('Failed to cancel empty session:', err)
+    }
+  }
+
   // Toggle UDP telemetry listener + session lifecycle
   const handleToggleLive = async () => {
     try {
       if (isLiveOn) {
-        // END session
+        await stopUdpListener()
+
         if (sessionId) {
           await fetch(`${API_URL}/api/sessions/${sessionId}/end`, {
             method: 'PUT',
@@ -53,14 +83,17 @@ function DashboardPage() {
           })
           setSessionId(null)
         }
-        // Signal forwarder to STOP capturing UDP
+
         if (socketRef.current) {
-          socketRef.current.emit('toggle_telemetry', { status: 'STOP' })
           socketRef.current.emit('control_overlay', { action: 'STOP' })
+        }
+        // Hide Electron overlay on LIVE OFF
+        if (window.electronAPI?.isElectron) {
+          await window.electronAPI.hideOverlay().catch(() => {})
+          setIsOverlayOn(false)
         }
         setIsLiveOn(false)
       } else {
-        // START session
         const sessionRes = await fetch(`${API_URL}/api/sessions`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -72,21 +105,33 @@ function DashboardPage() {
           }),
         })
         const sessionData = await sessionRes.json()
-        if (sessionData.sessionId) {
-          setSessionId(sessionData.sessionId)
-          setIsLiveOn(true)
-          lapCountRef.current = 0
-          setLapHistory([])
-          setTopSpeed(0)
-          // Signal forwarder to START capturing UDP
-          if (socketRef.current) {
-            socketRef.current.emit('toggle_telemetry', { status: 'START', sessionId: sessionData.sessionId })
-            socketRef.current.emit('control_overlay', { action: 'START' })
-          }
+        if (!sessionData.sessionId) {
+          throw new Error('Failed to create session')
+        }
+
+        const newSessionId = sessionData.sessionId
+        setSessionId(newSessionId)
+        lapCountRef.current = 0
+        setLapHistory([])
+        setTopSpeed(0)
+
+        try {
+          await startUdpListener(newSessionId)
+        } catch (err) {
+          await cancelEmptySession(newSessionId)
+          setSessionId(null)
+          throw err
+        }
+
+        setIsLiveOn(true)
+        if (socketRef.current) {
+          socketRef.current.emit('control_overlay', { action: 'START' })
         }
       }
     } catch (err) {
       console.error('Failed to toggle live:', err)
+      alert(err.message || 'Failed to start live telemetry. Make sure F1 25 UDP is enabled on port 20777.')
+      setIsLiveOn(false)
     }
   }
 
@@ -101,16 +146,31 @@ function DashboardPage() {
         }).catch(() => {})
         fetch(`${API_URL}/api/udp/stop`, { method: 'POST' }).catch(() => {})
       }
-      // Close overlay popup when leaving dashboard
-      if (window._overlayPopup && !window._overlayPopup.closed) {
+      // Close overlay on leave — Electron or popup
+      if (window.electronAPI?.isElectron) {
+        window.electronAPI.hideOverlay().catch(() => {})
+      } else if (window._overlayPopup && !window._overlayPopup.closed) {
         window._overlayPopup.close()
+        window._overlayPopup = null
       }
-      window._overlayPopup = null
     }
   }, [sessionId])
 
   // Open/close overlay as a minimal popup window
-  const handleOpenOverlay = () => {
+  const handleOpenOverlay = async () => {
+    // ── Electron desktop: use native transparent overlay window ──
+    if (window.electronAPI?.isElectron) {
+      if (isOverlayOn) {
+        await window.electronAPI.hideOverlay()
+        setIsOverlayOn(false)
+      } else {
+        await window.electronAPI.showOverlay()
+        setIsOverlayOn(true)
+      }
+      return
+    }
+
+    // ── Web fallback: open as a popup window ──
     if (isOverlayOn) {
       if (window._overlayPopup && !window._overlayPopup.closed) {
         window._overlayPopup.close()
@@ -167,12 +227,11 @@ function DashboardPage() {
       setIsConnected(false)
     })
 
-    // Instant UDP status feedback
+    // Instant UDP status feedback (errors only — LIVE ON state is controlled by handleToggleLive)
     socket.on('udp_status', (data) => {
-      if (data.status === 'connected') {
-        setIsLiveOn(true)
-      } else if (data.status === 'disconnected' || data.status === 'error') {
+      if (data.status === 'error') {
         setIsLiveOn(false)
+        alert(data.message || 'UDP listener failed on port 20777')
       }
     })
 

@@ -142,7 +142,7 @@ def main():
                             point = {
                                 'timestamp': time.time(),
                                 'speed': float(speed),
-                                'steeringAngle': float(steer) * 360.0,
+                                'steeringAngle': float(steer),  # Raw -1..1, matches training data
                                 'throttle': float(throttle),
                                 'brake': float(brake),
                                 'lapTime': float(current_lap_time),
