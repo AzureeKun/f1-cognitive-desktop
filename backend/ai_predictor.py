@@ -150,17 +150,28 @@ def _build_feature_vector(point, prev):
     
     Features: Speed, Steering_Angle, Throttle, Brake, 
               Steering_Diff, Brake_Diff, Throttle_Diff, Lap_Time_Second
+
+    IMPORTANT: The model was trained on raw UDP steer values in -1..1 range.
+    The live system multiplies steer by 360 for display purposes.
+    We MUST divide by 360 here to restore the original scale before scaling.
     """
     speed = point.get('speed', 0)
-    steering = point.get('steeringAngle', 0)
+    steering_raw = point.get('steeringAngle', 0)
     throttle = point.get('throttle', 0)
     brake = point.get('brake', 0)
     lap_time = point.get('lapTime', 0)
 
+    # Normalise steering: live system sends steer*360, model trained on steer (-1..1)
+    steering = steering_raw / 360.0 if abs(steering_raw) > 1.5 else steering_raw
+
+    # Previous point steering (also normalise if needed)
+    prev_steer_raw = prev.get('steeringAngle', steering_raw)
+    prev_steer = prev_steer_raw / 360.0 if abs(prev_steer_raw) > 1.5 else prev_steer_raw
+
     # Compute diffs from previous point
-    steering_diff = steering - prev.get('steeringAngle', steering)
-    brake_diff = brake - prev.get('brake', brake)
-    throttle_diff = throttle - prev.get('throttle', throttle)
+    steering_diff = abs(steering - prev_steer)
+    brake_diff = abs(brake - prev.get('brake', brake))
+    throttle_diff = abs(throttle - prev.get('throttle', throttle))
 
     return [speed, steering, throttle, brake, steering_diff, brake_diff, throttle_diff, lap_time]
 
@@ -324,6 +335,9 @@ def predict_single(speed, steering_angle, throttle, brake, lap_time, lap_distanc
     Predict focus using sliding window batch (fixes BatchNorm single-sample bug).
     The model needs batch_size > 1 for BatchNorm to produce varied outputs.
     We maintain a window of recent feature vectors and predict the whole batch.
+
+    NOTE: steering_angle may arrive as raw (-1..1) or display-scaled (*360).
+    _build_feature_vector handles normalisation automatically.
     """
     global _model, _scaler, _prev_point, _feature_window
 
